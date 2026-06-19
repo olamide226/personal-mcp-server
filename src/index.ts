@@ -6,7 +6,7 @@ import { startStdioServer } from "./transports/stdio.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  if (config.MCP_TRANSPORT === "http") {
+  if (config.MCP_TRANSPORT === "streamable-http") {
     assertHttpConfig(config);
   }
 
@@ -21,6 +21,7 @@ async function main(): Promise<void> {
     return;
   }
 
+  // streamable-http (default)
   const httpServer = await startHttpServer(config, services);
   const shutdown = async (signal: string) => {
     log("info", "Shutting down", { signal });

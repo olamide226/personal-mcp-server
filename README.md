@@ -1,6 +1,6 @@
 # Personal MCP Server
 
-A private, single-user MCP (Model Context Protocol) server that gives AI agents access to your email, Slack notifications, and a personal knowledge base ("soul docs"). Written in TypeScript, runs over HTTP (Streamable HTTP) or stdio.
+A private, single-user MCP (Model Context Protocol) server that gives AI agents access to your email, Slack notifications, and a personal knowledge base ("soul docs"). Written in TypeScript, runs over Streamable HTTP or stdio.
 
 **Capabilities at a glance:**
 - Search and read Gmail or any IMAP mailbox
@@ -68,7 +68,7 @@ Every setting can be provided via `.env` or overridden at runtime by the corresp
 
 | Variable | Default | Notes |
 |----------|---------|-------|
-| `MCP_TRANSPORT` | `http` | `http` or `stdio` |
+| `MCP_TRANSPORT` | `streamable-http` | `streamable-http`, `http` (alias), or `stdio` |
 | `MCP_PORT` | `3000` | HTTP listen port |
 | `MCP_HOST` | `127.0.0.1` | Set to `0.0.0.0` for remote access |
 | `MCP_BEARER_TOKEN` | — | Optional. When set, requires `Authorization: Bearer <token>` on all requests |
@@ -198,7 +198,7 @@ src/
 - **Shared mutable config** — All services hold a reference to the same `AppConfig` object. Setup tools mutate it directly; lazy services (Gmail, IMAP, SMTP, Slack) pick up changes on the next call. Only `DatabaseService` needs an explicit `reconnect()` since it creates the libSQL client eagerly.
 - **Audit logging** — Every tool call is logged to the `audit_log` table with success/failure, args (secrets redacted), and a timestamp.
 - **Two-step email send** — `email_prepare_send` stages a draft (stored in DB with a TTL), `email_confirm_send` consumes it. Prevents accidental sends and gives the agent a chance to review.
-- **OAuth works in both transports** — HTTP mode has dedicated callback routes; stdio mode uses the `setup_gmail_oauth_start` / `setup_gmail_oauth_complete` tools where the user copies the code manually.
+- **OAuth works in both transports** — Streamable HTTP mode has dedicated callback routes; stdio mode uses the `setup_gmail_oauth_start` / `setup_gmail_oauth_complete` tools where the user copies the code manually.
 
 ---
 
