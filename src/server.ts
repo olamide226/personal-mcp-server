@@ -105,13 +105,23 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
     "get_my_soul_docs",
     {
       title: "Get soul docs",
-      description: "Read/search personal soul docs stored in the SQLite-compatible DB.",
+      description:
+        "Read/search personal soul docs stored in the SQLite-compatible DB. " +
+        "Returns docs ordered by most recently updated first.",
       inputSchema: {
         query: z.string().optional()
-          .describe("Search term matched against title, content, and source."),
-        tag: z.string().optional().describe("Filter docs by tag."),
+          .describe(
+            "Full-text search term matched against title, content, and source. " +
+            "Uses SQL LIKE with wildcards on both sides — partial matches work. " +
+            "Omit to return all docs."
+          ),
+        tag: z.string().optional()
+          .describe(
+            "Exact-match filter on tags. Docs must have at least one tag matching this value. " +
+            "Omit to skip tag filtering."
+          ),
         limit: z.number().int().min(1).max(100).default(20)
-          .describe("Maximum number of docs to return (1-100).")
+          .describe("Maximum number of docs to return (1-100). Default 20.")
       }
     },
     handlers.getMySoulDocs
@@ -124,13 +134,39 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       description: "Create or update a personal soul doc in the SQLite-compatible DB.",
       inputSchema: {
         id: z.string().uuid().optional()
-          .describe("Existing doc ID to update. Omit to create a new doc."),
-        title: z.string().min(1).describe("Document title."),
-        content: z.string().min(1).describe("Document body content."),
-        tags: z.array(z.string().min(1)).default([]).describe("Tags for categorization."),
-        source: z.string().optional().describe("Source/context where this doc came from."),
+          .describe(
+            "UUID of an existing doc to update (upsert). " +
+            "When provided, the original created_at is preserved and all other fields are overwritten. " +
+            "When omitted, a new doc is created with a fresh UUID."
+          ),
+        title: z.string().min(1)
+          .describe(
+            "Document title. This is the primary label shown in results. " +
+            "It is also full-text searched by the query param in get_my_soul_docs."
+          ),
+        content: z.string().min(1)
+          .describe(
+            "Document body. Full-text searched by the query param in get_my_soul_docs. " +
+            "Use this for the actual knowledge or note content."
+          ),
+        tags: z.array(z.string().min(1)).default([])
+          .describe(
+            "Tags for categorization and filtering. " +
+            "Used by the tag param in get_my_soul_docs for exact-match filtering. " +
+            "Use lowercase, kebab-case or single words (e.g. 'typescript', 'meeting-notes')."
+          ),
+        source: z.string().optional()
+          .describe(
+            "Where this doc originated — a URL, conversation title, file path, or project name. " +
+            "Full-text searched by the query param in get_my_soul_docs. " +
+            "Useful for tracing a doc back to its origin."
+          ),
         metadata: z.record(z.unknown()).default({})
-          .describe("Arbitrary metadata key-value pairs.")
+          .describe(
+            "Arbitrary key-value pairs for structured data (dates, counts, statuses, cross-references). " +
+            "Stored as JSON — use for data you might want to inspect programmatically. " +
+            "Not searchable via get_my_soul_docs; put searchable text in content or source instead."
+          )
       }
     },
     handlers.writeMySoulDoc
