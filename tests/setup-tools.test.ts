@@ -63,7 +63,12 @@ describe("setupToolHandlers", () => {
 
   it("setup_status shows unconfigured services when no creds provided", async () => {
     const config = makeConfig();
-    const services = { db: { audit: vi.fn(async () => undefined) } } as unknown as Services;
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        listAccountLabels: vi.fn(() => [])
+      }
+    } as unknown as Services;
 
     const handlers = setupToolHandlers(config, services);
     const result = await handlers.setupStatus({});
@@ -71,8 +76,7 @@ describe("setupToolHandlers", () => {
 
     expect(payload.database.configured).toBe(true);
     expect(payload.gmail.configured).toBe(false);
-    expect(payload.customMail.imapConfigured).toBe(false);
-    expect(payload.customMail.smtpConfigured).toBe(false);
+    expect(payload.customMail.accounts).toEqual([]);
     expect(payload.slack.configured).toBe(false);
   });
 
@@ -80,13 +84,17 @@ describe("setupToolHandlers", () => {
     const config = makeConfig({
       GOOGLE_REFRESH_TOKEN: "test-refresh-token",
       GOOGLE_CLIENT_ID: "test-client-id",
-      CUSTOM_IMAP_HOST: "imap.example.com",
-      CUSTOM_IMAP_USER: "user@example.com",
-      CUSTOM_IMAP_PASSWORD: "secret123",
-      CUSTOM_SMTP_HOST: "smtp.example.com",
       SLACK_WEBHOOK_URL: "https://hooks.slack.com/test"
     });
-    const services = { db: { audit: vi.fn(async () => undefined) } } as unknown as Services;
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        listAccountLabels: vi.fn(() => [
+          { label: "default", imapConfigured: true, smtpConfigured: true },
+          { label: "work", imapConfigured: true, smtpConfigured: false }
+        ])
+      }
+    } as unknown as Services;
 
     const handlers = setupToolHandlers(config, services);
     const result = await handlers.setupStatus({});
@@ -94,8 +102,8 @@ describe("setupToolHandlers", () => {
 
     expect(payload.gmail.configured).toBe(true);
     expect(payload.gmail.clientIdConfigured).toBe(true);
-    expect(payload.customMail.imapConfigured).toBe(true);
-    expect(payload.customMail.smtpConfigured).toBe(true);
+    expect(payload.customMail.accounts).toHaveLength(2);
+    expect(payload.customMail.accounts[0].label).toBe("default");
     expect(payload.slack.configured).toBe(true);
   });
 
@@ -147,5 +155,117 @@ describe("setupToolHandlers", () => {
       "token-abc",
       undefined
     );
+  });
+
+  // ── Multi-account mail ────────────────────────────────────
+
+  it("setup_custom_mail_imap configures the default account when no account param", async () => {
+    const config = makeConfig();
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        addOrUpdateAccount: vi.fn(),
+        testImapConnection: vi.fn(async () => undefined)
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    const result = await handlers.setupCustomMailImap({
+      host: "imap.example.com",
+      user: "me@example.com",
+      password: "secret"
+    });
+    const payload = textPayload(result);
+
+    expect(payload.ok).toBe(true);
+    expect(payload.account).toBe("default");
+    expect(services.customMail.addOrUpdateAccount).toHaveBeenCalledWith({
+      label: "default",
+      imap: {
+        host: "imap.example.com",
+        port: 993,
+        secure: true,
+        user: "me@example.com",
+        password: "secret",
+        mailbox: "INBOX"
+      }
+    });
+    expect(services.customMail.testImapConnection).toHaveBeenCalledWith("default");
+  });
+
+  it("setup_custom_mail_imap configures a named account", async () => {
+    const config = makeConfig();
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        addOrUpdateAccount: vi.fn(),
+        testImapConnection: vi.fn(async () => undefined)
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    const result = await handlers.setupCustomMailImap({
+      account: "work",
+      host: "imap.work.com",
+      port: 143,
+      secure: false,
+      user: "me@work.com",
+      password: "app-pass",
+      mailbox: "INBOX"
+    });
+    const payload = textPayload(result);
+
+    expect(payload.ok).toBe(true);
+    expect(payload.account).toBe("work");
+    expect(services.customMail.addOrUpdateAccount).toHaveBeenCalledWith({
+      label: "work",
+      imap: {
+        host: "imap.work.com",
+        port: 143,
+        secure: false,
+        user: "me@work.com",
+        password: "app-pass",
+        mailbox: "INBOX"
+      }
+    });
+    expect(services.customMail.testImapConnection).toHaveBeenCalledWith("work");
+  });
+
+  it("setup_mail_account_list returns all accounts", async () => {
+    const config = makeConfig();
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        listAccountLabels: vi.fn(() => [
+          { label: "default", imapConfigured: true, smtpConfigured: true },
+          { label: "work", imapConfigured: true, smtpConfigured: false }
+        ])
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    const result = await handlers.setupMailAccountList({});
+    const payload = textPayload(result);
+
+    expect(payload.accounts).toHaveLength(2);
+    expect(payload.accounts[0].label).toBe("default");
+  });
+
+  it("setup_mail_account_remove removes a non-default account", async () => {
+    const config = makeConfig();
+    const services = {
+      db: { audit: vi.fn(async () => undefined) },
+      customMail: {
+        removeAccount: vi.fn()
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    const result = await handlers.setupMailAccountRemove({ account: "work" });
+    const payload = textPayload(result);
+
+    expect(payload.ok).toBe(true);
+    expect(payload.removed).toBe("work");
+    expect(services.customMail.removeAccount).toHaveBeenCalledWith("work");
   });
 });

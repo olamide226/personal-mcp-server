@@ -41,6 +41,8 @@ const envSchema = z.object({
   CUSTOM_SMTP_USER: z.string().optional(),
   CUSTOM_SMTP_PASSWORD: z.string().optional(),
 
+  CUSTOM_MAIL_ACCOUNTS: z.string().optional(),
+
   EMAIL_DEFAULT_FROM: z.string().email().optional(),
   EMAIL_CONFIRMATION_TTL_SECONDS: z.coerce.number().int().positive().default(600),
 

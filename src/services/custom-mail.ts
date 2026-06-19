@@ -4,18 +4,88 @@ import nodemailer from "nodemailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
 import type { AppConfig } from "../config.js";
 import { ConfigError, NotFoundError } from "../errors.js";
-import type { EmailDraft, MailMessage, MailSearchInput, MailSummary } from "../types.js";
+import type {
+  EmailDraft,
+  MailAccount,
+  MailAccountStatus,
+  MailMessage,
+  MailSearchInput,
+  MailSummary
+} from "../types.js";
+
+const DEFAULT_LABEL = "default";
 
 export class CustomMailService {
   private readonly config: AppConfig;
+  private readonly accounts: Map<string, MailAccount>;
 
   constructor(config: AppConfig) {
     this.config = config;
+    this.accounts = buildAccounts(config);
   }
 
+  // ── Account management ──────────────────────────────────────
+
+  /** Return status summaries for all configured accounts (no secrets). */
+  listAccountLabels(): MailAccountStatus[] {
+    const result: MailAccountStatus[] = [];
+    for (const [label, account] of this.accounts) {
+      result.push({
+        label,
+        imapConfigured: Boolean(account.imap?.host && account.imap.user && account.imap.password),
+        smtpConfigured: Boolean(account.smtp?.host),
+        defaultFrom: account.defaultFrom
+      });
+    }
+    return result;
+  }
+
+  /** Add or update an account at runtime. The "default" label is reserved. */
+  addOrUpdateAccount(account: MailAccount): void {
+    if (account.label === DEFAULT_LABEL) {
+      throw new ConfigError(
+        `"${DEFAULT_LABEL}" is a reserved label. Use setup_custom_mail_imap/smtp without an account param to configure the default account.`
+      );
+    }
+    const existing = this.accounts.get(account.label);
+    this.accounts.set(account.label, {
+      label: account.label,
+      imap: account.imap ?? existing?.imap,
+      smtp: account.smtp ?? existing?.smtp,
+      defaultFrom: account.defaultFrom ?? existing?.defaultFrom
+    });
+  }
+
+  /** Remove a non-default account. */
+  removeAccount(label: string): void {
+    if (label === DEFAULT_LABEL) {
+      throw new ConfigError("Cannot remove the default account.");
+    }
+    if (!this.accounts.has(label)) {
+      throw new NotFoundError(`Account "${label}" not found.`);
+    }
+    this.accounts.delete(label);
+  }
+
+  /** Resolve an account label to its config. Defaults to "default". */
+  private getAccount(label?: string): MailAccount {
+    const key = label ?? DEFAULT_LABEL;
+    const account = this.accounts.get(key);
+    if (!account) {
+      throw new NotFoundError(
+        `Mail account "${key}" not found. Available: ${[...this.accounts.keys()].join(", ")}.`
+      );
+    }
+    return account;
+  }
+
+  // ── IMAP operations ─────────────────────────────────────────
+
   async searchMessages(input: MailSearchInput): Promise<MailSummary[]> {
-    return this.withImap(async (client) => {
-      await client.mailboxOpen(this.config.CUSTOM_IMAP_MAILBOX);
+    const account = this.getAccount(input.account);
+    this.assertImapConfigured(account);
+    return this.withImap(account, async (client) => {
+      await client.mailboxOpen(account.imap!.mailbox);
       const uids = await client.search(buildImapQuery(input), { uid: true });
       if (!uids) {
         return [];
@@ -45,9 +115,11 @@ export class CustomMailService {
     });
   }
 
-  async getMessage(uid: number): Promise<MailMessage> {
-    return this.withImap(async (client) => {
-      await client.mailboxOpen(this.config.CUSTOM_IMAP_MAILBOX);
+  async getMessage(uid: number, accountLabel?: string): Promise<MailMessage> {
+    const account = this.getAccount(accountLabel);
+    this.assertImapConfigured(account);
+    return this.withImap(account, async (client) => {
+      await client.mailboxOpen(account.imap!.mailbox);
       const message = await client.fetchOne(
         String(uid),
         {
@@ -80,22 +152,25 @@ export class CustomMailService {
     });
   }
 
-  async send(draft: EmailDraft): Promise<{ messageId?: string; response?: string }> {
-    this.assertSmtpConfigured();
+  // ── SMTP operations ─────────────────────────────────────────
+
+  async send(
+    draft: EmailDraft,
+    accountLabel?: string
+  ): Promise<{ messageId?: string; response?: string }> {
+    const account = this.getAccount(draft.account ?? accountLabel);
+    this.assertSmtpConfigured(account);
     const transporter = nodemailer.createTransport({
-      host: this.config.CUSTOM_SMTP_HOST,
-      port: this.config.CUSTOM_SMTP_PORT,
-      secure: this.config.CUSTOM_SMTP_SECURE,
-      auth: this.config.CUSTOM_SMTP_USER
-        ? {
-            user: this.config.CUSTOM_SMTP_USER,
-            pass: this.config.CUSTOM_SMTP_PASSWORD
-          }
+      host: account.smtp!.host,
+      port: account.smtp!.port,
+      secure: account.smtp!.secure,
+      auth: account.smtp!.user
+        ? { user: account.smtp!.user, pass: account.smtp!.password }
         : undefined
     } satisfies SMTPTransport.Options);
 
     const result = await transporter.sendMail({
-      from: draft.from ?? this.config.EMAIL_DEFAULT_FROM,
+      from: draft.from ?? account.defaultFrom ?? this.config.EMAIL_DEFAULT_FROM,
       to: draft.to,
       cc: draft.cc,
       bcc: draft.bcc,
@@ -111,38 +186,40 @@ export class CustomMailService {
     };
   }
 
-  /** Connect to the configured IMAP server and log out. Throws on failure. */
-  async testImapConnection(): Promise<void> {
-    await this.withImap(async () => undefined);
+  // ── Connection tests ────────────────────────────────────────
+
+  async testImapConnection(accountLabel?: string): Promise<void> {
+    const account = this.getAccount(accountLabel);
+    this.assertImapConfigured(account);
+    await this.withImap(account, async () => undefined);
   }
 
-  /** Create an SMTP transport and call verify(). Throws on failure. */
-  async testSmtpConnection(): Promise<void> {
-    this.assertSmtpConfigured();
+  async testSmtpConnection(accountLabel?: string): Promise<void> {
+    const account = this.getAccount(accountLabel);
+    this.assertSmtpConfigured(account);
     const transporter = nodemailer.createTransport({
-      host: this.config.CUSTOM_SMTP_HOST,
-      port: this.config.CUSTOM_SMTP_PORT,
-      secure: this.config.CUSTOM_SMTP_SECURE,
-      auth: this.config.CUSTOM_SMTP_USER
-        ? {
-            user: this.config.CUSTOM_SMTP_USER,
-            pass: this.config.CUSTOM_SMTP_PASSWORD
-          }
+      host: account.smtp!.host,
+      port: account.smtp!.port,
+      secure: account.smtp!.secure,
+      auth: account.smtp!.user
+        ? { user: account.smtp!.user, pass: account.smtp!.password }
         : undefined
     } satisfies SMTPTransport.Options);
     await transporter.verify();
   }
 
-  private async withImap<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    this.assertImapConfigured();
+  // ── Private helpers ──────────────────────────────────────────
+
+  private async withImap<T>(
+    account: MailAccount,
+    fn: (client: ImapFlow) => Promise<T>
+  ): Promise<T> {
+    const imap = account.imap!;
     const client = new ImapFlow({
-      host: this.config.CUSTOM_IMAP_HOST!,
-      port: this.config.CUSTOM_IMAP_PORT,
-      secure: this.config.CUSTOM_IMAP_SECURE,
-      auth: {
-        user: this.config.CUSTOM_IMAP_USER!,
-        pass: this.config.CUSTOM_IMAP_PASSWORD!
-      },
+      host: imap.host,
+      port: imap.port,
+      secure: imap.secure,
+      auth: { user: imap.user, pass: imap.password },
       logger: false
     });
 
@@ -154,24 +231,143 @@ export class CustomMailService {
     }
   }
 
-  private assertImapConfigured(): void {
-    if (
-      !this.config.CUSTOM_IMAP_HOST ||
-      !this.config.CUSTOM_IMAP_USER ||
-      !this.config.CUSTOM_IMAP_PASSWORD
-    ) {
+  private assertImapConfigured(account: MailAccount): void {
+    if (!account.imap?.host || !account.imap.user || !account.imap.password) {
       throw new ConfigError(
-        "Custom IMAP is not configured. Set CUSTOM_IMAP_HOST, CUSTOM_IMAP_USER, and CUSTOM_IMAP_PASSWORD."
+        `IMAP is not configured for account "${account.label}". ` +
+        "Set IMAP credentials via .env or the setup_custom_mail_imap tool."
       );
     }
   }
 
-  private assertSmtpConfigured(): void {
-    if (!this.config.CUSTOM_SMTP_HOST) {
-      throw new ConfigError("Custom SMTP is not configured. Set CUSTOM_SMTP_HOST.");
+  private assertSmtpConfigured(account: MailAccount): void {
+    if (!account.smtp?.host) {
+      throw new ConfigError(
+        `SMTP is not configured for account "${account.label}". ` +
+        "Set SMTP credentials via .env or the setup_custom_mail_smtp tool."
+      );
     }
   }
 }
+
+// ── Helpers ────────────────────────────────────────────────────
+
+function buildAccounts(config: AppConfig): Map<string, MailAccount> {
+  const map = new Map<string, MailAccount>();
+
+  // Default account from flat env vars (backward compat)
+  const defaultAccount: MailAccount = {
+    label: DEFAULT_LABEL
+  };
+
+  if (config.CUSTOM_IMAP_HOST) {
+    defaultAccount.imap = {
+      host: config.CUSTOM_IMAP_HOST,
+      port: config.CUSTOM_IMAP_PORT,
+      secure: config.CUSTOM_IMAP_SECURE,
+      user: config.CUSTOM_IMAP_USER ?? "",
+      password: config.CUSTOM_IMAP_PASSWORD ?? "",
+      mailbox: config.CUSTOM_IMAP_MAILBOX
+    };
+  }
+
+  if (config.CUSTOM_SMTP_HOST) {
+    defaultAccount.smtp = {
+      host: config.CUSTOM_SMTP_HOST,
+      port: config.CUSTOM_SMTP_PORT,
+      secure: config.CUSTOM_SMTP_SECURE,
+      user: config.CUSTOM_SMTP_USER,
+      password: config.CUSTOM_SMTP_PASSWORD
+    };
+  }
+
+  if (config.EMAIL_DEFAULT_FROM) {
+    defaultAccount.defaultFrom = config.EMAIL_DEFAULT_FROM;
+  }
+
+  map.set(DEFAULT_LABEL, defaultAccount);
+
+  // Additional accounts from JSON env var
+  if (config.CUSTOM_MAIL_ACCOUNTS) {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(config.CUSTOM_MAIL_ACCOUNTS);
+    } catch {
+      throw new ConfigError("CUSTOM_MAIL_ACCOUNTS is not valid JSON.");
+    }
+    if (!Array.isArray(raw)) {
+      throw new ConfigError("CUSTOM_MAIL_ACCOUNTS must be a JSON array.");
+    }
+
+    for (const item of raw) {
+      const account = parseMailAccount(item);
+      if (account.label === DEFAULT_LABEL) {
+        throw new ConfigError(
+          `"${DEFAULT_LABEL}" is a reserved label in CUSTOM_MAIL_ACCOUNTS. ` +
+          "Use the CUSTOM_IMAP_* / CUSTOM_SMTP_* env vars for the default account."
+        );
+      }
+      if (map.has(account.label)) {
+        throw new ConfigError(
+          `Duplicate mail account label "${account.label}" in CUSTOM_MAIL_ACCOUNTS.`
+        );
+      }
+      map.set(account.label, account);
+    }
+  }
+
+  return map;
+}
+
+function parseMailAccount(item: unknown): MailAccount {
+  if (!item || typeof item !== "object") {
+    throw new ConfigError("Each entry in CUSTOM_MAIL_ACCOUNTS must be an object.");
+  }
+  const o = item as Record<string, unknown>;
+
+  if (typeof o.label !== "string" || !o.label) {
+    throw new ConfigError("Each entry in CUSTOM_MAIL_ACCOUNTS requires a non-empty 'label' string.");
+  }
+
+  const account: MailAccount = { label: o.label };
+
+  if (o.defaultFrom && typeof o.defaultFrom === "string") {
+    account.defaultFrom = o.defaultFrom;
+  }
+
+  if (o.imap && typeof o.imap === "object") {
+    const imap = o.imap as Record<string, unknown>;
+    if (typeof imap.host !== "string" || !imap.host) {
+      throw new ConfigError(`IMAP host is required for account "${o.label}".`);
+    }
+    account.imap = {
+      host: imap.host as string,
+      port: typeof imap.port === "number" ? imap.port : 993,
+      secure: imap.secure !== false,
+      user: typeof imap.user === "string" ? imap.user : "",
+      password: typeof imap.password === "string" ? imap.password : "",
+      mailbox: typeof imap.mailbox === "string" ? imap.mailbox : "INBOX"
+    };
+  }
+
+  if (o.smtp && typeof o.smtp === "object") {
+    const smtp = o.smtp as Record<string, unknown>;
+    if (typeof smtp.host !== "string" || !smtp.host) {
+      throw new ConfigError(`SMTP host is required for account "${o.label}".`);
+    }
+    account.smtp = {
+      host: smtp.host as string,
+      port: typeof smtp.port === "number" ? smtp.port : 587,
+      secure: smtp.secure === true,
+      user: typeof smtp.user === "string" ? smtp.user : undefined,
+      password: typeof smtp.password === "string" ? smtp.password : undefined
+    };
+  }
+
+  return account;
+}
+
+// ── IMAP helpers ───────────────────────────────────────────────
 
 function buildImapQuery(input: MailSearchInput): SearchObject {
   const query: SearchObject = { all: true };
@@ -186,7 +382,9 @@ function buildImapQuery(input: MailSearchInput): SearchObject {
   return query;
 }
 
-function formatAddressList(addresses?: Array<{ name?: string; address?: string }>): string | undefined {
+function formatAddressList(
+  addresses?: Array<{ name?: string; address?: string }>
+): string | undefined {
   if (!addresses?.length) {
     return undefined;
   }

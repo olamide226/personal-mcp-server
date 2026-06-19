@@ -9,6 +9,8 @@ const limitSchema = z.number().int().min(1).max(50).default(10)
   .describe("Maximum number of results (1-50).");
 
 export const mailSearchSchema = {
+  account: z.string().optional()
+    .describe("Mail account label (defaults to 'default'). Use with custom IMAP mailboxes."),
   from: z.string().optional().describe("Sender email/name filter."),
   to: z.string().optional().describe("Recipient email/name filter."),
   subject: z.string().optional().describe("Subject filter."),
@@ -22,6 +24,8 @@ export const mailSearchSchema = {
 
 export const emailDraftSchema = {
   provider: z.enum(["gmail", "smtp"]).describe("Use gmail for Gmail API, smtp for custom SMTP."),
+  account: z.string().optional()
+    .describe("Mail account label for SMTP routing (defaults to 'default'). Ignored for gmail."),
   from: z.string().email().optional().describe("Sender email address."),
   to: z.array(z.string().email()).min(1).describe("Recipient email addresses (1+)."),
   cc: z.array(z.string().email()).optional().describe("CC recipient email addresses."),
@@ -52,8 +56,8 @@ export function toolHandlers(services: Services) {
     customMailGetMessage: audited(
       services,
       "custom_mail_get_message",
-      async ({ uid }: { uid: number }) => {
-        const message = await services.customMail.getMessage(uid);
+      async ({ uid, account }: { uid: number; account?: string }) => {
+        const message = await services.customMail.getMessage(uid, account);
         return jsonText({ message });
       }
     ),
@@ -66,6 +70,7 @@ export function toolHandlers(services: Services) {
           id: prepared.id,
           expiresAt: prepared.expiresAt,
           provider: prepared.provider,
+          account: prepared.account,
           from: prepared.from,
           to: prepared.to,
           cc: prepared.cc,

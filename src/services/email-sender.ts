@@ -12,6 +12,6 @@ export class EmailSenderService {
     if (draft.provider === "gmail") {
       return this.gmail.send(draft);
     }
-    return this.customMail.send(draft);
+    return this.customMail.send(draft, draft.account);
   }
 }
