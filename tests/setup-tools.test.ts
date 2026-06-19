@@ -113,7 +113,8 @@ describe("setupToolHandlers", () => {
       db: {
         reconnect: vi.fn(async () => undefined),
         ping: vi.fn(async () => undefined),
-        audit: vi.fn(async () => undefined)
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
       }
     } as unknown as Services;
 
@@ -129,6 +130,10 @@ describe("setupToolHandlers", () => {
       undefined
     );
     expect(services.db.ping).toHaveBeenCalledOnce();
+    expect(services.db.setRuntimeConfig).toHaveBeenCalledWith(
+      "TURSO_DATABASE_URL",
+      "file:/data/pod-db.sqlite"
+    );
   });
 
   it("setup_database passes libsql:// URLs through unchanged", async () => {
@@ -137,7 +142,8 @@ describe("setupToolHandlers", () => {
       db: {
         reconnect: vi.fn(async () => undefined),
         ping: vi.fn(async () => undefined),
-        audit: vi.fn(async () => undefined)
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
       }
     } as unknown as Services;
 
@@ -162,10 +168,14 @@ describe("setupToolHandlers", () => {
   it("setup_custom_mail_imap configures the default account when no account param", async () => {
     const config = makeConfig();
     const services = {
-      db: { audit: vi.fn(async () => undefined) },
+      db: {
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
+      },
       customMail: {
         addOrUpdateAccount: vi.fn(),
-        testImapConnection: vi.fn(async () => undefined)
+        testImapConnection: vi.fn(async () => undefined),
+        exportAccounts: vi.fn(() => [{ label: "default", imap: {} }])
       }
     } as unknown as Services;
 
@@ -196,10 +206,14 @@ describe("setupToolHandlers", () => {
   it("setup_custom_mail_imap configures a named account", async () => {
     const config = makeConfig();
     const services = {
-      db: { audit: vi.fn(async () => undefined) },
+      db: {
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
+      },
       customMail: {
         addOrUpdateAccount: vi.fn(),
-        testImapConnection: vi.fn(async () => undefined)
+        testImapConnection: vi.fn(async () => undefined),
+        exportAccounts: vi.fn(() => [{ label: "default", imap: {} }, { label: "work", imap: {} }])
       }
     } as unknown as Services;
 
@@ -254,9 +268,13 @@ describe("setupToolHandlers", () => {
   it("setup_mail_account_remove removes a non-default account", async () => {
     const config = makeConfig();
     const services = {
-      db: { audit: vi.fn(async () => undefined) },
+      db: {
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
+      },
       customMail: {
-        removeAccount: vi.fn()
+        removeAccount: vi.fn(),
+        exportAccounts: vi.fn(() => [{ label: "default", imap: {} }])
       }
     } as unknown as Services;
 
@@ -267,5 +285,49 @@ describe("setupToolHandlers", () => {
     expect(payload.ok).toBe(true);
     expect(payload.removed).toBe("work");
     expect(services.customMail.removeAccount).toHaveBeenCalledWith("work");
+  });
+
+  it("setup_config_reset clears persisted config", async () => {
+    const config = makeConfig();
+    const services = {
+      db: {
+        audit: vi.fn(async () => undefined),
+        clearRuntimeConfig: vi.fn(async () => undefined)
+      },
+      customMail: {
+        exportAccounts: vi.fn(() => [{ label: "default", imap: {}, smtp: {} }]),
+        removeAccount: vi.fn()
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    const result = await handlers.setupConfigReset({});
+    const payload = textPayload(result);
+
+    expect(payload.ok).toBe(true);
+    expect(services.db.clearRuntimeConfig).toHaveBeenCalledOnce();
+  });
+
+  it("setup_config_reset removes non-default mail accounts from memory", async () => {
+    const config = makeConfig();
+    const services = {
+      db: {
+        audit: vi.fn(async () => undefined),
+        clearRuntimeConfig: vi.fn(async () => undefined)
+      },
+      customMail: {
+        exportAccounts: vi.fn(() => [
+          { label: "default", imap: {}, smtp: {} },
+          { label: "work", imap: {}, smtp: {} }
+        ]),
+        removeAccount: vi.fn()
+      }
+    } as unknown as Services;
+
+    const handlers = setupToolHandlers(config, services);
+    await handlers.setupConfigReset({});
+
+    expect(services.customMail.removeAccount).toHaveBeenCalledWith("work");
+    expect(services.customMail.removeAccount).not.toHaveBeenCalledWith("default");
   });
 });
