@@ -156,8 +156,12 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
         "Configure a Turso/libSQL database URL and auth token, then test the connection. " +
         "Overrides .env values at runtime.",
       inputSchema: {
-        url: z.string().url().optional()
-          .describe("Turso/libSQL database URL (overrides TURSO_DATABASE_URL)"),
+        url: z.string().min(1).optional()
+          .describe(
+            "Database URL. Accepts libsql:// for Turso, file: for local, " +
+            "or a plain path like /data/db.sqlite (auto-prefixed with file:). " +
+            "Overrides TURSO_DATABASE_URL."
+          ),
         authToken: z.string().optional()
           .describe("Turso auth token (overrides TURSO_AUTH_TOKEN)"),
         syncUrl: z.string().url().optional()

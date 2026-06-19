@@ -71,7 +71,32 @@ Requested Gmail scopes are:
 
 ## Database
 
-Local development uses `TURSO_DATABASE_URL=file:local.db` or `:memory:` in tests. For Turso, use a `libsql://...` URL plus `TURSO_AUTH_TOKEN`.
+The server supports local SQLite files and remote Turso databases via libSQL.
+
+### Local (file)
+
+```env
+# Default — saves to the working directory
+TURSO_DATABASE_URL=file:local.db
+
+# Custom path for pods/containers (absolute path recommended)
+TURSO_DATABASE_URL=file:/data/my-server.db
+```
+
+When using a plain path (e.g. via `setup_database`), the `file:` prefix is added automatically:
+```json
+{ "url": "/data/my-server.db" }   // becomes file:/data/my-server.db
+{ "url": "file:./data/db.sqlite" } // stays as-is
+```
+
+### Remote (Turso)
+
+```env
+TURSO_DATABASE_URL=libsql://your-db-your-org.turso.io
+TURSO_AUTH_TOKEN=your-turso-token
+```
+
+Use `TURSO_SYNC_URL` and `TURSO_SYNC_INTERVAL_MS` for embedded replicas. The `setup_database` tool can also switch between local and remote at runtime.
 
 ## Docker
 

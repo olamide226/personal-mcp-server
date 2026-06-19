@@ -39,11 +39,17 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       authToken?: string;
       syncUrl?: string;
     }) => {
-      if (input.url) set(config, "TURSO_DATABASE_URL", input.url);
+      if (input.url) {
+        set(config, "TURSO_DATABASE_URL", normalizeDbUrl(input.url));
+      }
       if (input.authToken !== undefined) set(config, "TURSO_AUTH_TOKEN", input.authToken);
       if (input.syncUrl !== undefined) set(config, "TURSO_SYNC_URL", input.syncUrl);
 
-      await services.db.reconnect(input.url, input.authToken, input.syncUrl);
+      await services.db.reconnect(
+        input.url ? normalizeDbUrl(input.url) : undefined,
+        input.authToken,
+        input.syncUrl
+      );
       await services.db.ping();
 
       return jsonText({
@@ -162,4 +168,18 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       return jsonText({ ok: true });
     })
   };
+}
+
+/**
+ * Normalize a database URL so plain file paths are converted to valid libSQL file: URLs.
+ * - `libsql://` URLs pass through unchanged.
+ * - `file:` URLs pass through unchanged.
+ * - `/absolute/path/to/db.db` becomes `file:/absolute/path/to/db.db`
+ * - `./relative/path/to/db.db` becomes `file:./relative/path/to/db.db`
+ */
+function normalizeDbUrl(raw: string): string {
+  if (raw.startsWith("libsql://") || raw.startsWith("file:") || raw.startsWith("http")) {
+    return raw;
+  }
+  return `file:${raw}`;
 }
