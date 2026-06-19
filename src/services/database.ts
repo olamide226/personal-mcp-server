@@ -14,7 +14,7 @@ export class DatabaseService {
     this.client =
       client ??
       createClient({
-        url: config.TURSO_DATABASE_URL,
+        url: normalizeDbUrl(config.TURSO_DATABASE_URL),
         authToken: config.TURSO_AUTH_TOKEN,
         syncUrl: config.TURSO_SYNC_URL,
         syncInterval: config.TURSO_SYNC_INTERVAL_MS
@@ -73,8 +73,9 @@ export class DatabaseService {
     } catch {
       // close() is sync in libSQL — ignore errors from an already-closed client.
     }
+    const effectiveUrl = url ?? this.config.TURSO_DATABASE_URL;
     this.client = createClient({
-      url: url ?? this.config.TURSO_DATABASE_URL,
+      url: normalizeDbUrl(effectiveUrl),
       authToken: authToken ?? this.config.TURSO_AUTH_TOKEN,
       syncUrl: syncUrl ?? this.config.TURSO_SYNC_URL,
       syncInterval: this.config.TURSO_SYNC_INTERVAL_MS
@@ -289,4 +290,16 @@ function safeJson<T>(value: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Normalize a database URL so plain file paths are valid libSQL URLs.
+ * `/data/db.sqlite` → `file:/data/db.sqlite`
+ * `libsql://...` and `file:...` pass through unchanged.
+ */
+function normalizeDbUrl(raw: string): string {
+  if (raw.startsWith("libsql://") || raw.startsWith("file:") || raw.startsWith("http")) {
+    return raw;
+  }
+  return `file:${raw}`;
 }
