@@ -177,7 +177,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
  * - `/absolute/path/to/db.db` becomes `file:/absolute/path/to/db.db`
  * - `./relative/path/to/db.db` becomes `file:./relative/path/to/db.db`
  */
-function normalizeDbUrl(raw: string): string {
+export function normalizeDbUrl(raw: string): string {
   if (raw.startsWith("libsql://") || raw.startsWith("file:") || raw.startsWith("http")) {
     return raw;
   }
