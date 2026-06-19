@@ -329,6 +329,18 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
   );
 
   server.registerTool(
+    "setup_config_reset",
+    {
+      title: "Reset runtime config",
+      description:
+        "Clear all persisted runtime configuration and revert to .env values. " +
+        "A server restart is recommended after reset.",
+      inputSchema: {}
+    },
+    setup.setupConfigReset
+  );
+
+  server.registerTool(
     "setup_slack_webhook",
     {
       title: "Setup Slack webhook",

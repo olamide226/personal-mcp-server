@@ -56,6 +56,19 @@ export class CustomMailService {
     });
   }
 
+  /** Export all accounts for persistence (includes credentials). */
+  exportAccounts(): MailAccount[] {
+    return [...this.accounts.values()];
+  }
+
+  /** Bulk-load accounts from persisted state (e.g. on startup). Existing entries are replaced. */
+  loadAccounts(accounts: MailAccount[]): void {
+    for (const account of accounts) {
+      if (account.label === DEFAULT_LABEL) continue; // default is built from env vars
+      this.accounts.set(account.label, account);
+    }
+  }
+
   /** Remove a non-default account. */
   removeAccount(label: string): void {
     if (label === DEFAULT_LABEL) {
