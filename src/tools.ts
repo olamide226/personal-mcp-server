@@ -123,7 +123,7 @@ export function toolHandlers(services: Services) {
   };
 }
 
-function audited<TArgs>(
+export function audited<TArgs>(
   services: Services,
   toolName: string,
   fn: (args: TArgs) => Promise<ReturnType<typeof jsonText>>
@@ -165,7 +165,7 @@ function summarizeArgs(args: unknown): JsonRecord {
   const record = args as Record<string, unknown>;
   return Object.fromEntries(
     Object.entries(record).map(([key, value]) => {
-      if (["text", "html", "content", "CUSTOM_IMAP_PASSWORD", "CUSTOM_SMTP_PASSWORD"].includes(key)) {
+      if (["text", "html", "content", "CUSTOM_IMAP_PASSWORD", "CUSTOM_SMTP_PASSWORD", "password", "clientSecret", "webhookUrl", "authToken"].includes(key)) {
         return [key, "[redacted]"];
       }
       if (Array.isArray(value)) {

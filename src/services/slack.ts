@@ -26,4 +26,11 @@ export class SlackService {
 
     return { ok: true };
   }
+
+  /** Send a test message to verify the webhook URL works. */
+  async testConnection(testMessage?: string): Promise<{ ok: true }> {
+    return this.sendNotification({
+      text: testMessage ?? "MCP server setup test: Slack webhook configured successfully."
+    });
+  }
 }

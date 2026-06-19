@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import type { Services } from "./runtime.js";
 import { emailDraftSchema, mailSearchSchema, toolHandlers } from "./tools.js";
+import { setupToolHandlers } from "./setup-tools.js";
 
 export function createMcpServer(config: AppConfig, services: Services): McpServer {
   const server = new McpServer(
@@ -127,6 +128,146 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       }
     },
     handlers.writeMySoulDoc
+  );
+
+  // ── Setup tools (disabled when MCP_ENABLE_SETUP_TOOLS=false) ──
+
+  if (!config.MCP_ENABLE_SETUP_TOOLS) {
+    return server;
+  }
+
+  const setup = setupToolHandlers(config, services);
+
+  server.registerTool(
+    "setup_status",
+    {
+      title: "Setup status",
+      description: "Show which services are configured (no secrets exposed).",
+      inputSchema: {}
+    },
+    setup.setupStatus
+  );
+
+  server.registerTool(
+    "setup_database",
+    {
+      title: "Setup database",
+      description:
+        "Configure a Turso/libSQL database URL and auth token, then test the connection. " +
+        "Overrides .env values at runtime.",
+      inputSchema: {
+        url: z.string().url().optional()
+          .describe("Turso/libSQL database URL (overrides TURSO_DATABASE_URL)"),
+        authToken: z.string().optional()
+          .describe("Turso auth token (overrides TURSO_AUTH_TOKEN)"),
+        syncUrl: z.string().url().optional()
+          .describe("Turso sync URL (overrides TURSO_SYNC_URL)")
+      }
+    },
+    setup.setupDatabase
+  );
+
+  server.registerTool(
+    "setup_gmail_oauth_start",
+    {
+      title: "Start Gmail OAuth setup",
+      description:
+        "Generate a Google OAuth authorization URL. Open it in a browser, authorize, " +
+        "then call setup_gmail_oauth_complete with the code from the redirect URL.",
+      inputSchema: {
+        clientId: z.string().optional()
+          .describe("Google OAuth client ID (overrides GOOGLE_CLIENT_ID)"),
+        clientSecret: z.string().optional()
+          .describe("Google OAuth client secret (overrides GOOGLE_CLIENT_SECRET)"),
+        redirectUri: z.string().optional()
+          .describe("OAuth redirect URI (overrides GOOGLE_REDIRECT_URI)")
+      }
+    },
+    setup.setupGmailOAuthStart
+  );
+
+  server.registerTool(
+    "setup_gmail_oauth_complete",
+    {
+      title: "Complete Gmail OAuth setup",
+      description:
+        "Exchange an OAuth authorization code for tokens. Stores the refresh_token " +
+        "in the runtime config (does not write .env).",
+      inputSchema: {
+        code: z.string().min(1)
+          .describe("OAuth authorization code from the redirect URL query parameter"),
+        state: z.string().optional()
+          .describe("State parameter for CSRF verification")
+      }
+    },
+    setup.setupGmailOAuthComplete
+  );
+
+  server.registerTool(
+    "setup_custom_mail_imap",
+    {
+      title: "Setup custom IMAP",
+      description:
+        "Configure IMAP credentials and test the connection. " +
+        "Overrides .env values at runtime.",
+      inputSchema: {
+        host: z.string().min(1)
+          .describe("IMAP server hostname (e.g., imap.example.com)"),
+        port: z.number().int().positive().default(993)
+          .describe("IMAP server port"),
+        secure: z.boolean().default(true)
+          .describe("Use TLS (true for 993, false for 143)"),
+        user: z.string().min(1)
+          .describe("IMAP username (usually the full email address)"),
+        password: z.string().min(1)
+          .describe("IMAP password or app password"),
+        mailbox: z.string().default("INBOX")
+          .describe("IMAP mailbox folder")
+      }
+    },
+    setup.setupCustomMailImap
+  );
+
+  server.registerTool(
+    "setup_custom_mail_smtp",
+    {
+      title: "Setup custom SMTP",
+      description:
+        "Configure SMTP credentials and test the connection. " +
+        "Overrides .env values at runtime.",
+      inputSchema: {
+        host: z.string().min(1)
+          .describe("SMTP server hostname (e.g., smtp.example.com)"),
+        port: z.number().int().positive().default(587)
+          .describe("SMTP server port"),
+        secure: z.boolean().default(false)
+          .describe("Use TLS (true for 465, false for 587 with STARTTLS)"),
+        user: z.string().optional()
+          .describe("SMTP username (required if auth is needed)"),
+        password: z.string().optional()
+          .describe("SMTP password"),
+        defaultFrom: z.string().email().optional()
+          .describe("Default from address for outgoing email")
+      }
+    },
+    setup.setupCustomMailSmtp
+  );
+
+  server.registerTool(
+    "setup_slack_webhook",
+    {
+      title: "Setup Slack webhook",
+      description:
+        "Configure a Slack incoming webhook URL and send a test notification. " +
+        "Overrides SLACK_WEBHOOK_URL at runtime.",
+      inputSchema: {
+        webhookUrl: z.string().url()
+          .describe("Slack incoming webhook URL"),
+        testMessage: z.string().optional()
+          .describe("Optional test message content")
+      }
+    },
+    setup.setupSlackWebhook
   );
 
   return server;

@@ -111,6 +111,28 @@ export class CustomMailService {
     };
   }
 
+  /** Connect to the configured IMAP server and log out. Throws on failure. */
+  async testImapConnection(): Promise<void> {
+    await this.withImap(async () => undefined);
+  }
+
+  /** Create an SMTP transport and call verify(). Throws on failure. */
+  async testSmtpConnection(): Promise<void> {
+    this.assertSmtpConfigured();
+    const transporter = nodemailer.createTransport({
+      host: this.config.CUSTOM_SMTP_HOST,
+      port: this.config.CUSTOM_SMTP_PORT,
+      secure: this.config.CUSTOM_SMTP_SECURE,
+      auth: this.config.CUSTOM_SMTP_USER
+        ? {
+            user: this.config.CUSTOM_SMTP_USER,
+            pass: this.config.CUSTOM_SMTP_PASSWORD
+          }
+        : undefined
+    } satisfies SMTPTransport.Options);
+    await transporter.verify();
+  }
+
   private async withImap<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
     this.assertImapConfigured();
     const client = new ImapFlow({

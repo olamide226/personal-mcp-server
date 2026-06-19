@@ -5,10 +5,12 @@ import { NotFoundError } from "../errors.js";
 import type { AuditEvent, EmailDraft, JsonRecord, PreparedEmail, SoulDoc } from "../types.js";
 
 export class DatabaseService {
-  private readonly client: Client;
+  private client: Client;
+  private readonly config: AppConfig;
   private readonly confirmationTtlSeconds: number;
 
   constructor(config: AppConfig, client?: Client) {
+    this.config = config;
     this.client =
       client ??
       createClient({
@@ -54,6 +56,31 @@ export class DatabaseService {
       ],
       "write"
     );
+  }
+
+  /** Close the existing client and create a new one with updated config. Re-runs DDL. */
+  async reconnect(
+    url?: string,
+    authToken?: string,
+    syncUrl?: string
+  ): Promise<void> {
+    try {
+      this.client.close();
+    } catch {
+      // close() is sync in libSQL — ignore errors from an already-closed client.
+    }
+    this.client = createClient({
+      url: url ?? this.config.TURSO_DATABASE_URL,
+      authToken: authToken ?? this.config.TURSO_AUTH_TOKEN,
+      syncUrl: syncUrl ?? this.config.TURSO_SYNC_URL,
+      syncInterval: this.config.TURSO_SYNC_INTERVAL_MS
+    });
+    await this.init();
+  }
+
+  /** Lightweight connection check. Throws if the database is unreachable. */
+  async ping(): Promise<void> {
+    await this.client.execute("SELECT 1");
   }
 
   async getSoulDocs(input: {
