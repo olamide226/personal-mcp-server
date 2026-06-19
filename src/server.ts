@@ -36,7 +36,7 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       title: "Get Gmail message",
       description: "Fetch a Gmail message by id.",
       inputSchema: {
-        id: z.string().min(1)
+        id: z.string().min(1).describe("Gmail message ID.")
       }
     },
     handlers.gmailGetMessage
@@ -58,7 +58,7 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       title: "Get custom mailbox message",
       description: "Fetch a message from the configured custom IMAP mailbox by UID.",
       inputSchema: {
-        uid: z.number().int().positive()
+        uid: z.number().int().positive().describe("IMAP message UID.")
       }
     },
     handlers.customMailGetMessage
@@ -81,6 +81,7 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       description: "Send a previously prepared email using its confirmation id.",
       inputSchema: {
         confirmationId: z.string().uuid()
+          .describe("Confirmation ID returned by email_prepare_send.")
       }
     },
     handlers.emailConfirmSend
@@ -92,8 +93,9 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       title: "Send Slack notification",
       description: "Send a notification to the configured Slack incoming webhook.",
       inputSchema: {
-        text: z.string().min(1),
+        text: z.string().min(1).describe("Notification text (markdown supported)."),
         blocks: z.array(z.unknown()).optional()
+          .describe("Optional Slack Block Kit blocks for rich formatting.")
       }
     },
     handlers.sendSlackNotification
@@ -103,11 +105,13 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
     "get_my_soul_docs",
     {
       title: "Get soul docs",
-      description: "Read/search personal soul docs stored in the remote SQLite-compatible DB.",
+      description: "Read/search personal soul docs stored in the SQLite-compatible DB.",
       inputSchema: {
-        query: z.string().optional(),
-        tag: z.string().optional(),
+        query: z.string().optional()
+          .describe("Search term matched against title, content, and source."),
+        tag: z.string().optional().describe("Filter docs by tag."),
         limit: z.number().int().min(1).max(100).default(20)
+          .describe("Maximum number of docs to return (1-100).")
       }
     },
     handlers.getMySoulDocs
@@ -117,14 +121,16 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
     "write_my_soul_doc",
     {
       title: "Write soul doc",
-      description: "Create or update a personal soul doc in the remote SQLite-compatible DB.",
+      description: "Create or update a personal soul doc in the SQLite-compatible DB.",
       inputSchema: {
-        id: z.string().uuid().optional(),
-        title: z.string().min(1),
-        content: z.string().min(1),
-        tags: z.array(z.string().min(1)).default([]),
-        source: z.string().optional(),
+        id: z.string().uuid().optional()
+          .describe("Existing doc ID to update. Omit to create a new doc."),
+        title: z.string().min(1).describe("Document title."),
+        content: z.string().min(1).describe("Document body content."),
+        tags: z.array(z.string().min(1)).default([]).describe("Tags for categorization."),
+        source: z.string().optional().describe("Source/context where this doc came from."),
         metadata: z.record(z.unknown()).default({})
+          .describe("Arbitrary metadata key-value pairs.")
       }
     },
     handlers.writeMySoulDoc
