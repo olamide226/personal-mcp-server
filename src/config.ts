@@ -14,7 +14,8 @@ const envSchema = z.object({
   MCP_PORT: z.coerce.number().int().positive().default(3000),
   MCP_HOST: z.string().default("127.0.0.1"),
   MCP_BEARER_TOKEN: z.string().optional(),
-  MCP_ALLOWED_ORIGINS: z.string().default(""),
+  MCP_ALLOWED_ORIGINS: z.string().default("*"),
+  MCP_ENABLE_SETUP_TOOLS: boolFromEnv.default(true),
 
   TURSO_DATABASE_URL: z.string().default("file:local.db"),
   TURSO_AUTH_TOKEN: z.string().optional(),
@@ -58,8 +59,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-export function assertHttpConfig(config: AppConfig): void {
-  if (!config.MCP_BEARER_TOKEN) {
-    throw new Error("MCP_BEARER_TOKEN is required when MCP_TRANSPORT=http");
-  }
+export function assertHttpConfig(_config: AppConfig): void {
+  // MCP_BEARER_TOKEN is optional — when unset, all requests are authorized.
+}
+
+/** Mutate a config property at runtime. Used by setup tools to override .env values. */
+export function setConfigValue(config: AppConfig, key: string, value: unknown): void {
+  (config as Record<string, unknown>)[key] = value;
 }

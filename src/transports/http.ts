@@ -145,6 +145,10 @@ async function handleGoogleCallback(
 }
 
 function isAuthorized(config: AppConfig, req: IncomingMessage): boolean {
+  // When no bearer token is configured, all requests are authorized.
+  if (!config.MCP_BEARER_TOKEN) {
+    return true;
+  }
   const expected = `Bearer ${config.MCP_BEARER_TOKEN}`;
   return req.headers.authorization === expected;
 }
@@ -154,8 +158,9 @@ function isAllowedOrigin(config: AppConfig, req: IncomingMessage): boolean {
   if (!origin) {
     return true;
   }
-  if (config.allowedOrigins.length === 0) {
-    return false;
+  // "*" means allow all origins.
+  if (config.allowedOrigins.length === 1 && config.allowedOrigins[0] === "*") {
+    return true;
   }
   return config.allowedOrigins.includes(origin);
 }
