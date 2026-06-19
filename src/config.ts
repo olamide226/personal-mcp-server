@@ -8,7 +8,10 @@ const boolFromEnv = z
 
 const envSchema = z.object({
   NODE_ENV: z.string().default("development"),
-  MCP_TRANSPORT: z.enum(["http", "stdio"]).default("http"),
+  MCP_TRANSPORT: z
+    .enum(["streamable-http", "http", "stdio"])
+    .default("streamable-http")
+    .transform((v) => (v === "http" ? "streamable-http" : v)),
   MCP_NAME: z.string().default("personal-mcp-server"),
   MCP_VERSION: z.string().default("0.1.0"),
   MCP_PORT: z.coerce.number().int().positive().default(3000),
