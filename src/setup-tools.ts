@@ -23,10 +23,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
           redirectUriConfigured: Boolean(config.GOOGLE_REDIRECT_URI)
         },
         customMail: {
-          imapConfigured: Boolean(
-            config.CUSTOM_IMAP_HOST && config.CUSTOM_IMAP_USER && config.CUSTOM_IMAP_PASSWORD
-          ),
-          smtpConfigured: Boolean(config.CUSTOM_SMTP_HOST)
+          accounts: services.customMail.listAccountLabels()
         },
         slack: {
           configured: Boolean(config.SLACK_WEBHOOK_URL)
@@ -110,6 +107,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
     }),
 
     setupCustomMailImap: audited(services, "setup_custom_mail_imap", async (input: {
+      account?: string;
       host: string;
       port?: number;
       secure?: boolean;
@@ -117,23 +115,31 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       password: string;
       mailbox?: string;
     }) => {
-      set(config, "CUSTOM_IMAP_HOST", input.host);
-      if (input.port !== undefined) set(config, "CUSTOM_IMAP_PORT", input.port);
-      if (input.secure !== undefined) set(config, "CUSTOM_IMAP_SECURE", input.secure);
-      set(config, "CUSTOM_IMAP_USER", input.user);
-      set(config, "CUSTOM_IMAP_PASSWORD", input.password);
-      if (input.mailbox !== undefined) set(config, "CUSTOM_IMAP_MAILBOX", input.mailbox);
+      const label = input.account ?? "default";
+      services.customMail.addOrUpdateAccount({
+        label,
+        imap: {
+          host: input.host,
+          port: input.port ?? 993,
+          secure: input.secure ?? true,
+          user: input.user,
+          password: input.password,
+          mailbox: input.mailbox ?? "INBOX"
+        }
+      });
 
-      await services.customMail.testImapConnection();
+      await services.customMail.testImapConnection(label);
 
       return jsonText({
         ok: true,
+        account: label,
         host: input.host,
         user: input.user
       });
     }),
 
     setupCustomMailSmtp: audited(services, "setup_custom_mail_smtp", async (input: {
+      account?: string;
       host: string;
       port?: number;
       secure?: boolean;
@@ -141,21 +147,42 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       password?: string;
       defaultFrom?: string;
     }) => {
-      set(config, "CUSTOM_SMTP_HOST", input.host);
-      if (input.port !== undefined) set(config, "CUSTOM_SMTP_PORT", input.port);
-      if (input.secure !== undefined) set(config, "CUSTOM_SMTP_SECURE", input.secure);
-      if (input.user !== undefined) set(config, "CUSTOM_SMTP_USER", input.user);
-      if (input.password !== undefined) set(config, "CUSTOM_SMTP_PASSWORD", input.password);
-      if (input.defaultFrom) set(config, "EMAIL_DEFAULT_FROM", input.defaultFrom);
+      const label = input.account ?? "default";
+      services.customMail.addOrUpdateAccount({
+        label,
+        smtp: {
+          host: input.host,
+          port: input.port ?? 587,
+          secure: input.secure ?? false,
+          user: input.user,
+          password: input.password
+        },
+        defaultFrom: input.defaultFrom
+      });
 
-      await services.customMail.testSmtpConnection();
+      await services.customMail.testSmtpConnection(label);
 
       return jsonText({
         ok: true,
+        account: label,
         host: input.host,
         user: input.user ?? null
       });
     }),
+
+    setupMailAccountList: audited(services, "setup_mail_account_list", async () => {
+      const accounts = services.customMail.listAccountLabels();
+      return jsonText({ accounts });
+    }),
+
+    setupMailAccountRemove: audited(
+      services,
+      "setup_mail_account_remove",
+      async ({ account }: { account: string }) => {
+        services.customMail.removeAccount(account);
+        return jsonText({ ok: true, removed: account });
+      }
+    ),
 
     setupSlackWebhook: audited(services, "setup_slack_webhook", async (input: {
       webhookUrl: string;

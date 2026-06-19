@@ -1,6 +1,42 @@
 export type JsonRecord = Record<string, unknown>;
 
+// ── Mail accounts ───────────────────────────────────────────
+
+export interface ImapAccountConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password: string;
+  mailbox: string;
+}
+
+export interface SmtpAccountConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user?: string;
+  password?: string;
+}
+
+export interface MailAccount {
+  label: string;
+  imap?: ImapAccountConfig;
+  smtp?: SmtpAccountConfig;
+  defaultFrom?: string;
+}
+
+export interface MailAccountStatus {
+  label: string;
+  imapConfigured: boolean;
+  smtpConfigured: boolean;
+  defaultFrom?: string;
+}
+
+// ── Mail types ──────────────────────────────────────────────
+
 export interface MailSearchInput {
+  account?: string;
   from?: string;
   to?: string;
   subject?: string;
@@ -33,6 +69,7 @@ export interface MailMessage extends MailSummary {
 
 export interface EmailDraft {
   provider: "gmail" | "smtp";
+  account?: string;
   from?: string;
   to: string[];
   cc?: string[];

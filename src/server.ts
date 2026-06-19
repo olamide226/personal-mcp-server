@@ -58,7 +58,9 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       title: "Get custom mailbox message",
       description: "Fetch a message from the configured custom IMAP mailbox by UID.",
       inputSchema: {
-        uid: z.number().int().positive().describe("IMAP message UID.")
+        uid: z.number().int().positive().describe("IMAP message UID."),
+        account: z.string().optional()
+          .describe("Mail account label (defaults to 'default').")
       }
     },
     handlers.customMailGetMessage
@@ -254,9 +256,11 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
     {
       title: "Setup custom IMAP",
       description:
-        "Configure IMAP credentials and test the connection. " +
-        "Overrides .env values at runtime.",
+        "Configure IMAP credentials for a mail account and test the connection. " +
+        "Use the account param to target a non-default account (e.g. 'work', 'personal').",
       inputSchema: {
+        account: z.string().optional()
+          .describe("Mail account label. Omit to configure the default account."),
         host: z.string().min(1)
           .describe("IMAP server hostname (e.g., imap.example.com)"),
         port: z.number().int().positive().default(993)
@@ -279,9 +283,11 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
     {
       title: "Setup custom SMTP",
       description:
-        "Configure SMTP credentials and test the connection. " +
-        "Overrides .env values at runtime.",
+        "Configure SMTP credentials for a mail account and test the connection. " +
+        "Use the account param to target a non-default account (e.g. 'work', 'personal').",
       inputSchema: {
+        account: z.string().optional()
+          .describe("Mail account label. Omit to configure the default account."),
         host: z.string().min(1)
           .describe("SMTP server hostname (e.g., smtp.example.com)"),
         port: z.number().int().positive().default(587)
@@ -297,6 +303,29 @@ export function createMcpServer(config: AppConfig, services: Services): McpServe
       }
     },
     setup.setupCustomMailSmtp
+  );
+
+  server.registerTool(
+    "setup_mail_account_list",
+    {
+      title: "List mail accounts",
+      description: "List all configured mail account labels and their IMAP/SMTP status (no secrets exposed).",
+      inputSchema: {}
+    },
+    setup.setupMailAccountList
+  );
+
+  server.registerTool(
+    "setup_mail_account_remove",
+    {
+      title: "Remove mail account",
+      description: "Remove a non-default mail account. The default account cannot be removed.",
+      inputSchema: {
+        account: z.string().min(1)
+          .describe("Account label to remove (cannot be 'default').")
+      }
+    },
+    setup.setupMailAccountRemove
   );
 
   server.registerTool(
