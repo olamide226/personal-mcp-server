@@ -5,7 +5,8 @@ import { assertValidDraft } from "./utils/email.js";
 import { jsonText } from "./utils/mcp.js";
 import type { EmailDraft, JsonRecord } from "./types.js";
 
-const limitSchema = z.number().int().min(1).max(50).default(10);
+const limitSchema = z.number().int().min(1).max(50).default(10)
+  .describe("Maximum number of results (1-50).");
 
 export const mailSearchSchema = {
   from: z.string().optional().describe("Sender email/name filter."),
@@ -21,14 +22,14 @@ export const mailSearchSchema = {
 
 export const emailDraftSchema = {
   provider: z.enum(["gmail", "smtp"]).describe("Use gmail for Gmail API, smtp for custom SMTP."),
-  from: z.string().email().optional(),
-  to: z.array(z.string().email()).min(1),
-  cc: z.array(z.string().email()).optional(),
-  bcc: z.array(z.string().email()).optional(),
-  subject: z.string().min(1),
-  text: z.string().optional(),
-  html: z.string().optional(),
-  replyTo: z.string().email().optional()
+  from: z.string().email().optional().describe("Sender email address."),
+  to: z.array(z.string().email()).min(1).describe("Recipient email addresses (1+)."),
+  cc: z.array(z.string().email()).optional().describe("CC recipient email addresses."),
+  bcc: z.array(z.string().email()).optional().describe("BCC recipient email addresses."),
+  subject: z.string().min(1).describe("Email subject line."),
+  text: z.string().optional().describe("Plain text body."),
+  html: z.string().optional().describe("HTML body."),
+  replyTo: z.string().email().optional().describe("Reply-to email address.")
 };
 
 export function toolHandlers(services: Services) {
