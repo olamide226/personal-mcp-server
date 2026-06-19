@@ -8,6 +8,12 @@ function set(config: AppConfig, key: string, value: unknown): void {
   (config as Record<string, unknown>)[key] = value;
 }
 
+/** Persist all current mail accounts to the runtime_config table. */
+async function persistMailAccounts(services: Services): Promise<void> {
+  const accounts = services.customMail.exportAccounts();
+  await services.db.setRuntimeConfig("mail_accounts", JSON.stringify(accounts));
+}
+
 export function setupToolHandlers(config: AppConfig, services: Services) {
   return {
     setupStatus: audited(services, "setup_status", async () => {
@@ -48,6 +54,15 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
         input.syncUrl
       );
       await services.db.ping();
+
+      // Persist to survive restarts
+      await services.db.setRuntimeConfig("TURSO_DATABASE_URL", config.TURSO_DATABASE_URL);
+      if (config.TURSO_AUTH_TOKEN) {
+        await services.db.setRuntimeConfig("TURSO_AUTH_TOKEN", config.TURSO_AUTH_TOKEN);
+      }
+      if (config.TURSO_SYNC_URL) {
+        await services.db.setRuntimeConfig("TURSO_SYNC_URL", config.TURSO_SYNC_URL);
+      }
 
       return jsonText({
         ok: true,
@@ -94,6 +109,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       }
 
       set(config, "GOOGLE_REFRESH_TOKEN", tokens.refresh_token);
+      await services.db.setRuntimeConfig("GOOGLE_REFRESH_TOKEN", tokens.refresh_token);
 
       return jsonText({
         ok: true,
@@ -129,6 +145,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       });
 
       await services.customMail.testImapConnection(label);
+      await persistMailAccounts(services);
 
       return jsonText({
         ok: true,
@@ -161,6 +178,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       });
 
       await services.customMail.testSmtpConnection(label);
+      await persistMailAccounts(services);
 
       return jsonText({
         ok: true,
@@ -180,6 +198,7 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       "setup_mail_account_remove",
       async ({ account }: { account: string }) => {
         services.customMail.removeAccount(account);
+        await persistMailAccounts(services);
         return jsonText({ ok: true, removed: account });
       }
     ),
@@ -191,8 +210,33 @@ export function setupToolHandlers(config: AppConfig, services: Services) {
       set(config, "SLACK_WEBHOOK_URL", input.webhookUrl);
 
       await services.slack.testConnection(input.testMessage);
+      await services.db.setRuntimeConfig("SLACK_WEBHOOK_URL", input.webhookUrl);
 
       return jsonText({ ok: true });
+    }),
+
+    setupConfigReset: audited(services, "setup_config_reset", async () => {
+      await services.db.clearRuntimeConfig();
+
+      // Revert in-memory config to .env values
+      if (process.env.TURSO_DATABASE_URL) set(config, "TURSO_DATABASE_URL", process.env.TURSO_DATABASE_URL);
+      if (process.env.TURSO_AUTH_TOKEN) set(config, "TURSO_AUTH_TOKEN", process.env.TURSO_AUTH_TOKEN);
+      if (process.env.TURSO_SYNC_URL) set(config, "TURSO_SYNC_URL", process.env.TURSO_SYNC_URL);
+      if (process.env.GOOGLE_REFRESH_TOKEN) set(config, "GOOGLE_REFRESH_TOKEN", process.env.GOOGLE_REFRESH_TOKEN);
+      if (process.env.SLACK_WEBHOOK_URL) set(config, "SLACK_WEBHOOK_URL", process.env.SLACK_WEBHOOK_URL);
+
+      // Remove all non-default mail accounts (they came from setup tools or persistence)
+      const current = services.customMail.exportAccounts();
+      for (const account of current) {
+        if (account.label !== "default") {
+          services.customMail.removeAccount(account.label);
+        }
+      }
+
+      return jsonText({
+        ok: true,
+        note: "Runtime config cleared from DB. .env values are now in effect. Restart recommended for full reset."
+      });
     })
   };
 }

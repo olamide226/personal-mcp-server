@@ -52,7 +52,11 @@ export class DatabaseService {
         )`,
         `CREATE INDEX IF NOT EXISTS idx_soul_docs_updated_at ON soul_docs(updated_at)`,
         `CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)`,
-        `CREATE INDEX IF NOT EXISTS idx_send_confirmations_expires_at ON send_confirmations(expires_at)`
+        `CREATE INDEX IF NOT EXISTS idx_send_confirmations_expires_at ON send_confirmations(expires_at)`,
+        `CREATE TABLE IF NOT EXISTS runtime_config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )`
       ],
       "write"
     );
@@ -82,6 +86,42 @@ export class DatabaseService {
   async ping(): Promise<void> {
     await this.client.execute("SELECT 1");
   }
+
+  // ── Runtime config persistence ──────────────────────────
+
+  /** Load all persisted runtime config overrides. */
+  async getRuntimeConfig(): Promise<Record<string, string>> {
+    const result = await this.client.execute("SELECT key, value FROM runtime_config");
+    const config: Record<string, string> = {};
+    for (const row of result.rows) {
+      const r = row as Record<string, unknown>;
+      config[String(r.key)] = String(r.value);
+    }
+    return config;
+  }
+
+  /** Persist a single runtime config key-value pair. */
+  async setRuntimeConfig(key: string, value: string): Promise<void> {
+    await this.client.execute({
+      sql: "INSERT INTO runtime_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+      args: [key, value]
+    });
+  }
+
+  /** Delete a single runtime config key. */
+  async deleteRuntimeConfig(key: string): Promise<void> {
+    await this.client.execute({
+      sql: "DELETE FROM runtime_config WHERE key = ?",
+      args: [key]
+    });
+  }
+
+  /** Clear all persisted runtime config. */
+  async clearRuntimeConfig(): Promise<void> {
+    await this.client.execute("DELETE FROM runtime_config");
+  }
+
+  // ── Soul docs ─────────────────────────────────────────
 
   async getSoulDocs(input: {
     query?: string;
