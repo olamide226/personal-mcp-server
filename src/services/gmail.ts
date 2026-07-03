@@ -1,8 +1,16 @@
-import { google, gmail_v1 } from "googleapis";
 import type { AppConfig } from "../config.js";
 import { ConfigError, NotFoundError } from "../errors.js";
 import type { EmailDraft, MailMessage, MailSearchInput, MailSummary } from "../types.js";
 import { base64UrlEncode, buildMimeMessage, decodeBase64Url } from "../utils/email.js";
+import {
+  createOAuthClient,
+  listMessages,
+  getMessage,
+  sendMessage,
+  type GmailMessage,
+  type GmailMessagePart,
+  type GmailMessagePartHeader,
+} from "./gmail-api.js";
 
 export class GmailService {
   private readonly config: AppConfig;
@@ -20,11 +28,7 @@ export class GmailService {
       );
     }
 
-    const client = new google.auth.OAuth2(
-      GOOGLE_CLIENT_ID,
-      GOOGLE_CLIENT_SECRET,
-      GOOGLE_REDIRECT_URI
-    );
+    const client = createOAuthClient(this.config);
     if (GOOGLE_REFRESH_TOKEN) {
       client.setCredentials({ refresh_token: GOOGLE_REFRESH_TOKEN });
     }
@@ -50,32 +54,31 @@ export class GmailService {
     });
   }
 
-  private gmail(): gmail_v1.Gmail {
+  private assertRefreshToken(): void {
     if (!this.config.GOOGLE_REFRESH_TOKEN) {
       throw new ConfigError("GOOGLE_REFRESH_TOKEN is required for Gmail tools.");
     }
-    return google.gmail({ version: "v1", auth: this.getOAuthClient() });
   }
 
   async searchMessages(input: MailSearchInput): Promise<MailSummary[]> {
-    const gmail = this.gmail();
+    this.assertRefreshToken();
+    const auth = this.getOAuthClient();
     const q = buildGmailQuery(input);
-    const response = await gmail.users.messages.list({
-      userId: "me",
+    const response = await listMessages(auth, {
       q,
       maxResults: input.limit
     });
 
-    const messages = response.data.messages ?? [];
+    const messages = response.messages ?? [];
     const summaries = await Promise.all(
       messages.map(async (message) => {
-        const detail = await gmail.users.messages.get({
-          userId: "me",
-          id: message.id ?? "",
-          format: "metadata",
-          metadataHeaders: ["From", "To", "Subject", "Date"]
-        });
-        return gmailMessageToSummary(detail.data);
+        const detail = await getMessage(
+          auth,
+          message.id ?? "",
+          "metadata",
+          ["From", "To", "Subject", "Date"]
+        );
+        return gmailMessageToSummary(detail);
       })
     );
 
@@ -83,28 +86,21 @@ export class GmailService {
   }
 
   async getMessage(id: string): Promise<MailMessage> {
-    const response = await this.gmail().users.messages.get({
-      userId: "me",
-      id,
-      format: "full"
-    });
-    if (!response.data.id) {
+    this.assertRefreshToken();
+    const response = await getMessage(this.getOAuthClient(), id, "full");
+    if (!response.id) {
       throw new NotFoundError("Gmail message not found.");
     }
-    return gmailMessageToFullMessage(response.data);
+    return gmailMessageToFullMessage(response);
   }
 
   async send(draft: EmailDraft): Promise<{ id?: string; threadId?: string }> {
+    this.assertRefreshToken();
     const raw = base64UrlEncode(buildMimeMessage(draft, this.config.EMAIL_DEFAULT_FROM));
-    const response = await this.gmail().users.messages.send({
-      userId: "me",
-      requestBody: {
-        raw
-      }
-    });
+    const response = await sendMessage(this.getOAuthClient(), raw);
     return {
-      id: response.data.id ?? undefined,
-      threadId: response.data.threadId ?? undefined
+      id: response.id ?? undefined,
+      threadId: response.threadId ?? undefined
     };
   }
 }
@@ -126,7 +122,7 @@ function quoteIfNeeded(value: string): string {
   return /\s/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value;
 }
 
-function gmailMessageToSummary(message: gmail_v1.Schema$Message): MailSummary {
+function gmailMessageToSummary(message: GmailMessage): MailSummary {
   const headers = headersToRecord(message.payload?.headers);
   return {
     id: message.id ?? "",
@@ -141,7 +137,7 @@ function gmailMessageToSummary(message: gmail_v1.Schema$Message): MailSummary {
   };
 }
 
-function gmailMessageToFullMessage(message: gmail_v1.Schema$Message): MailMessage {
+function gmailMessageToFullMessage(message: GmailMessage): MailMessage {
   const summary = gmailMessageToSummary(message);
   const bodies = extractBodies(message.payload);
   return {
@@ -152,7 +148,7 @@ function gmailMessageToFullMessage(message: gmail_v1.Schema$Message): MailMessag
   };
 }
 
-function headersToRecord(headers?: gmail_v1.Schema$MessagePartHeader[]): Record<string, string> {
+function headersToRecord(headers?: GmailMessagePartHeader[] | null): Record<string, string> {
   const record: Record<string, string> = {};
   for (const header of headers ?? []) {
     if (header.name && header.value) {
@@ -162,7 +158,7 @@ function headersToRecord(headers?: gmail_v1.Schema$MessagePartHeader[]): Record<
   return record;
 }
 
-function extractBodies(part?: gmail_v1.Schema$MessagePart): { text: string; html: string } {
+function extractBodies(part?: GmailMessagePart | null): { text: string; html: string } {
   if (!part) {
     return { text: "", html: "" };
   }
