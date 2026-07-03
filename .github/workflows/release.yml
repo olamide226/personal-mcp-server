@@ -28,10 +28,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Last tag: $LAST_TAG"
-
-          COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s%n%b" 2>/dev/null || echo "")
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$LAST_TAG" ]; then
+            echo "Last tag: $LAST_TAG"
+            COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s%n%b" 2>/dev/null || echo "")
+          else
+            echo "No previous tag — this is the first release"
+            LAST_TAG="v0.0.0"
+            COMMITS=$(git log HEAD --pretty=format:"%s%n%b" 2>/dev/null || echo "")
+          fi
           if [ -z "$COMMITS" ]; then
             echo "No new commits since $LAST_TAG — nothing to release"
             echo "released=false" >> "$GITHUB_OUTPUT"
