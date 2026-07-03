@@ -185,7 +185,8 @@ src/
 │   └── stdio.ts       Stdio transport
 ├── services/
 │   ├── database.ts    Turso/libSQL client — soul_docs, send_confirmations, audit_log
-│   ├── gmail.ts       Gmail API via googleapis — search, read, send, OAuth
+│   ├── gmail-api.ts   Thin Gmail REST wrapper via google-auth-library + fetch (replaces googleapis)
+│   ├── gmail.ts       Gmail service — search, read, send, OAuth
 │   ├── custom-mail.ts IMAP (imapflow) + SMTP (nodemailer) — search, read, send
 │   ├── email-sender.tsComposite — delegates to Gmail or SMTP based on provider
 │   └── slack.ts       Slack incoming webhook via fetch
@@ -232,10 +233,35 @@ Plain paths passed to `setup_database` are auto-prefixed with `file:` — so `/d
 
 ## Deployment
 
-### Docker
+### Docker (GHCR)
+
+Pre-built multi-arch images (`linux/amd64`, `linux/arm64`) are published to GitHub Container Registry on every push to `main`.
+
+```bash
+# Pull and run
+docker run -d --name personal-mcp \
+  --env-file .env \
+  -p 3000:3000 \
+  -v "$(pwd)/data:/app/data" \
+  ghcr.io/olamide226/personal-mcp-server:latest
+
+# Or with a specific version
+docker run -d --name personal-mcp \
+  --env-file .env \
+  -p 3000:3000 \
+  -v "$(pwd)/data:/app/data" \
+  ghcr.io/olamide226/personal-mcp-server:v1.0.0
+```
+
+### Docker Compose (local build)
 
 ```bash
 docker compose up --build
+```
+
+To pull from GHCR instead of building locally, swap the `build: .` line in `docker-compose.yml` for:
+```yaml
+image: ghcr.io/olamide226/personal-mcp-server:latest
 ```
 
 ### Bare metal / pod
@@ -247,6 +273,28 @@ MCP_HOST=0.0.0.0 MCP_PORT=3000 TURSO_DATABASE_URL=file:/data/server.db node dist
 ```
 
 For production, set a strong `MCP_BEARER_TOKEN` and restrict `MCP_ALLOWED_ORIGINS` to your client origin(s).
+
+### Image tags
+
+| Tag | When |
+|-----|------|
+| `latest` | Every push to `main` |
+| `<full-sha>` | Every push to `main` |
+| `v1.2.3` | Version tag (e.g. `v1.2.3`) |
+| `1.2` | Major.minor alias |
+| `1` | Major alias |
+
+### Semantic releases
+
+Merging a PR to `main` triggers the `release.yml` workflow which parses [conventional commits](https://www.conventionalcommits.org/) since the last tag:
+
+| Commit prefix | Version bump |
+|---------------|-------------|
+| `feat: ...` | minor |
+| `fix: ...`, `perf: ...` | patch |
+| `BREAKING CHANGE: ...` or `feat!: ...` | major |
+
+If any meaningful commits are found, a `vX.Y.Z` tag is created and pushed — which triggers a Docker build with semver tags.
 
 ### Health check
 

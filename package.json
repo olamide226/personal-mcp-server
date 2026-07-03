@@ -20,7 +20,7 @@
     "@libsql/client": "^0.15.15",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "dotenv": "^16.4.7",
-    "googleapis": "^173.0.0",
+    "google-auth-library": "^9.0.0",
     "imapflow": "^1.0.194",
     "mailparser": "^3.9.10",
     "nodemailer": "^9.0.0",
