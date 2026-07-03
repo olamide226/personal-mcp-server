@@ -222,7 +222,7 @@ TURSO_DATABASE_URL=file:local.db
 # Local SQLite (absolute — for pods/containers that need persistent state)
 TURSO_DATABASE_URL=file:/data/my-server.db
 
-# Remote Turso
+# Remote Turso DB
 TURSO_DATABASE_URL=libsql://your-db.turso.io
 TURSO_AUTH_TOKEN=your-token
 ```
