@@ -250,7 +250,7 @@ docker run -d --name personal-mcp \
   --env-file .env \
   -p 3000:3000 \
   -v "$(pwd)/data:/app/data" \
-  ghcr.io/olamide226/personal-mcp-server:v1.0.0
+  ghcr.io/olamide226/personal-mcp-server:0.1.0
 ```
 
 ### Docker Compose (local build)
@@ -280,9 +280,11 @@ For production, set a strong `MCP_BEARER_TOKEN` and restrict `MCP_ALLOWED_ORIGIN
 |-----|------|
 | `latest` | Every push to `main` |
 | `<full-sha>` | Every push to `main` |
-| `v1.2.3` | Version tag (e.g. `v1.2.3`) |
-| `1.2` | Major.minor alias |
-| `1` | Major alias |
+| `0.1.0` | Version tag (e.g. `v0.1.0` → `0.1.0`) |
+| `0.1` | Major.minor alias (e.g. `v0.1.0` → `0.1`) |
+| `0` | Major alias (e.g. `v0.1.0` → `0`) |
+
+Tags are derived from the `v*` git tags via `docker/metadata-action`. The leading `v` is dropped on the image tags (Docker/OCI convention), so git tag `v0.1.0` produces image tags `0.1.0`, `0.1`, and `0`. Semantic releases start at `v0.1.0`.
 
 ### Semantic releases
 
