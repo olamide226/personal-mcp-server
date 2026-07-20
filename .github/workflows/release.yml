@@ -34,7 +34,7 @@ jobs:
             COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:"%s%n%b" 2>/dev/null || echo "")
           else
             echo "No previous tag — this is the first release"
-            LAST_TAG="v0.0.0"
+            LAST_TAG="v0.1.0"
             COMMITS=$(git log HEAD --pretty=format:"%s%n%b" 2>/dev/null || echo "")
           fi
           if [ -z "$COMMITS" ]; then
