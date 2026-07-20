@@ -284,7 +284,11 @@ For production, set a strong `MCP_BEARER_TOKEN` and restrict `MCP_ALLOWED_ORIGIN
 | `0.1` | Major.minor alias (e.g. `v0.1.0` → `0.1`) |
 | `0` | Major alias (e.g. `v0.1.0` → `0`) |
 
-Tags are derived from the `v*` git tags via `docker/metadata-action`. The leading `v` is dropped on the image tags (Docker/OCI convention), so git tag `v0.1.0` produces image tags `0.1.0`, `0.1`, and `0`. Semantic releases start at `v0.1.0`.
+`latest` and `<full-sha>` are published by the `docker` job in `ci.yml` on every push to `main`. The semver tags (`0.1.0`, `0.1`, `0`) are published by the `docker` job in `release.yml` when a release tag is created — the leading `v` from the git tag is dropped on the image tags (Docker/OCI convention), so `v0.1.0` → `0.1.0`. Semantic releases start at `v0.1.0`.
+
+> **Note — why the build lives in `release.yml`:** the `v*` tag is pushed using the default `GITHUB_TOKEN`, and GitHub does **not** trigger downstream workflows from `GITHUB_TOKEN` activity (to prevent loops). So `ci.yml`'s `tags: ["v*"]` trigger never fires for auto-created tags — the image is built in the same `release.yml` run that creates the tag instead.
+
+> **Rebuild an existing tag's image:** if a git tag already exists but its image wasn't published (e.g. `v0.1.0` predates this workflow), run the *Semantic Release* workflow manually — **Actions → Semantic Release → Run workflow → `v0.1.0`** — to build and push `0.1.0` / `0.1` / `0` for that tag.
 
 ### Semantic releases
 
@@ -296,7 +300,7 @@ Merging a PR to `main` triggers the `release.yml` workflow which parses [convent
 | `fix: ...`, `perf: ...` | patch |
 | `BREAKING CHANGE: ...` or `feat!: ...` | major |
 
-If any meaningful commits are found, a `vX.Y.Z` tag is created and pushed — which triggers a Docker build with semver tags.
+If any meaningful commits are found, a `vX.Y.Z` tag is created and the `release.yml` `docker` job builds & pushes the matching semver image tags (`X.Y.Z`, `X.Y`, `X`) to GHCR. (The tag push uses `GITHUB_TOKEN`, so `ci.yml` is not triggered by it — hence the build runs here.)
 
 ### Health check
 
