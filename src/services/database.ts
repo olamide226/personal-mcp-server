@@ -224,7 +224,11 @@ export class DatabaseService {
     };
   }
 
-  async consumeConfirmation(id: string): Promise<EmailDraft> {
+  /**
+   * Atomically reserve a confirmation while its email is being sent. A failed
+   * send can release the reservation so the user may retry the same draft.
+   */
+  async claimConfirmation(id: string): Promise<{ draft: EmailDraft; claimToken: string }> {
     const now = new Date().toISOString();
     const result = await this.client.execute({
       sql: `SELECT draft_json, expires_at, used_at
@@ -238,18 +242,42 @@ export class DatabaseService {
       throw new NotFoundError("Confirmation token not found.");
     }
     if (row.used_at) {
+      const usedAt = String(row.used_at);
+      if (usedAt.startsWith("sending:")) {
+        throw new NotFoundError("Confirmation token is already being sent.");
+      }
       throw new NotFoundError("Confirmation token has already been used.");
     }
     if (String(row.expires_at) < now) {
       throw new NotFoundError("Confirmation token has expired.");
     }
 
-    await this.client.execute({
-      sql: "UPDATE send_confirmations SET used_at = ? WHERE id = ?",
-      args: [now, id]
+    const claimToken = `sending:${randomUUID()}`;
+    const claim = await this.client.execute({
+      sql: "UPDATE send_confirmations SET used_at = ? WHERE id = ? AND used_at IS NULL",
+      args: [claimToken, id]
     });
+    if (claim.rowsAffected !== 1) {
+      throw new NotFoundError("Confirmation token is already being sent or has been used.");
+    }
 
-    return JSON.parse(String(row.draft_json)) as EmailDraft;
+    return { draft: JSON.parse(String(row.draft_json)) as EmailDraft, claimToken };
+  }
+
+  /** Mark a successfully sent confirmation as permanently consumed. */
+  async completeConfirmation(id: string, claimToken: string): Promise<void> {
+    await this.client.execute({
+      sql: "UPDATE send_confirmations SET used_at = ? WHERE id = ? AND used_at = ?",
+      args: [new Date().toISOString(), id, claimToken]
+    });
+  }
+
+  /** Make a confirmation available again after a known send failure. */
+  async releaseConfirmation(id: string, claimToken: string): Promise<void> {
+    await this.client.execute({
+      sql: "UPDATE send_confirmations SET used_at = NULL WHERE id = ? AND used_at = ?",
+      args: [id, claimToken]
+    });
   }
 
   async audit(event: AuditEvent): Promise<void> {

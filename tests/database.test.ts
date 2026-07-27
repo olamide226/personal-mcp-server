@@ -29,7 +29,7 @@ describe("DatabaseService", () => {
     });
   });
 
-  it("creates and consumes confirmation tokens exactly once", async () => {
+  it("keeps a confirmation retryable until its send succeeds", async () => {
     const db = new DatabaseService(
       loadConfig({
         TURSO_DATABASE_URL: ":memory:",
@@ -45,9 +45,14 @@ describe("DatabaseService", () => {
       text: "Body"
     });
 
-    const draft = await db.consumeConfirmation(prepared.id);
-    expect(draft.subject).toBe("Hello");
-    await expect(db.consumeConfirmation(prepared.id)).rejects.toThrow(/already been used/);
+    const firstClaim = await db.claimConfirmation(prepared.id);
+    expect(firstClaim.draft.subject).toBe("Hello");
+    await expect(db.claimConfirmation(prepared.id)).rejects.toThrow(/already being sent/);
+
+    await db.releaseConfirmation(prepared.id, firstClaim.claimToken);
+    const retryClaim = await db.claimConfirmation(prepared.id);
+    await db.completeConfirmation(prepared.id, retryClaim.claimToken);
+    await expect(db.claimConfirmation(prepared.id)).rejects.toThrow(/already been used/);
   });
 
   it("persists and retrieves runtime config", async () => {

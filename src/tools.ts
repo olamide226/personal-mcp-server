@@ -86,10 +86,16 @@ export function toolHandlers(services: Services) {
       services,
       "email_confirm_send",
       async ({ confirmationId }: { confirmationId: string }) => {
-        const draft = await services.db.consumeConfirmation(confirmationId);
+        const { draft, claimToken } = await services.db.claimConfirmation(confirmationId);
         assertValidDraft(draft);
-        const result = await services.emailSender.send(draft);
-        return jsonText({ sent: true, provider: draft.provider, result });
+        try {
+          const result = await services.emailSender.send(draft);
+          await services.db.completeConfirmation(confirmationId, claimToken);
+          return jsonText({ sent: true, provider: draft.provider, result });
+        } catch (error) {
+          await services.db.releaseConfirmation(confirmationId, claimToken).catch(() => undefined);
+          throw error;
+        }
       }
     ),
 

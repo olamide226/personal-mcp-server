@@ -40,13 +40,8 @@ export class CustomMailService {
     return result;
   }
 
-  /** Add or update an account at runtime. The "default" label is reserved. */
+  /** Add or update an account at runtime. */
   addOrUpdateAccount(account: MailAccount): void {
-    if (account.label === DEFAULT_LABEL) {
-      throw new ConfigError(
-        `"${DEFAULT_LABEL}" is a reserved label. Use setup_custom_mail_imap/smtp without an account param to configure the default account.`
-      );
-    }
     const existing = this.accounts.get(account.label);
     this.accounts.set(account.label, {
       label: account.label,
@@ -64,8 +59,7 @@ export class CustomMailService {
   /** Bulk-load accounts from persisted state (e.g. on startup). Existing entries are replaced. */
   loadAccounts(accounts: MailAccount[]): void {
     for (const account of accounts) {
-      if (account.label === DEFAULT_LABEL) continue; // default is built from env vars
-      this.accounts.set(account.label, account);
+      this.addOrUpdateAccount(account);
     }
   }
 
@@ -173,30 +167,27 @@ export class CustomMailService {
   ): Promise<{ messageId?: string; response?: string }> {
     const account = this.getAccount(draft.account ?? accountLabel);
     this.assertSmtpConfigured(account);
-    const transporter = nodemailer.createTransport({
-      host: account.smtp!.host,
-      port: account.smtp!.port,
-      secure: account.smtp!.secure,
-      auth: account.smtp!.user
-        ? { user: account.smtp!.user, pass: account.smtp!.password }
-        : undefined
-    } satisfies SMTPTransport.Options);
+    const transporter = this.createSmtpTransport(account);
 
-    const result = await transporter.sendMail({
-      from: draft.from ?? account.defaultFrom ?? this.config.EMAIL_DEFAULT_FROM,
-      to: draft.to,
-      cc: draft.cc,
-      bcc: draft.bcc,
-      replyTo: draft.replyTo,
-      subject: draft.subject,
-      text: draft.text,
-      html: draft.html
-    });
+    try {
+      const result = await transporter.sendMail({
+        from: draft.from ?? account.defaultFrom ?? this.config.EMAIL_DEFAULT_FROM,
+        to: draft.to,
+        cc: draft.cc,
+        bcc: draft.bcc,
+        replyTo: draft.replyTo,
+        subject: draft.subject,
+        text: draft.text,
+        html: draft.html
+      });
 
-    return {
-      messageId: result.messageId,
-      response: result.response
-    };
+      return {
+        messageId: result.messageId,
+        response: result.response
+      };
+    } finally {
+      transporter.close();
+    }
   }
 
   // ── Connection tests ────────────────────────────────────────
@@ -210,15 +201,12 @@ export class CustomMailService {
   async testSmtpConnection(accountLabel?: string): Promise<void> {
     const account = this.getAccount(accountLabel);
     this.assertSmtpConfigured(account);
-    const transporter = nodemailer.createTransport({
-      host: account.smtp!.host,
-      port: account.smtp!.port,
-      secure: account.smtp!.secure,
-      auth: account.smtp!.user
-        ? { user: account.smtp!.user, pass: account.smtp!.password }
-        : undefined
-    } satisfies SMTPTransport.Options);
-    await transporter.verify();
+    const transporter = this.createSmtpTransport(account);
+    try {
+      await transporter.verify();
+    } finally {
+      transporter.close();
+    }
   }
 
   // ── Private helpers ──────────────────────────────────────────
@@ -260,6 +248,20 @@ export class CustomMailService {
         "Set SMTP credentials via .env or the setup_custom_mail_smtp tool."
       );
     }
+  }
+
+  private createSmtpTransport(account: MailAccount) {
+    const smtp = account.smtp!;
+    return nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      requireTLS: !smtp.secure && smtp.port === 587,
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 30_000,
+      auth: smtp.user ? { user: smtp.user, pass: smtp.password } : undefined
+    } satisfies SMTPTransport.Options);
   }
 }
 
