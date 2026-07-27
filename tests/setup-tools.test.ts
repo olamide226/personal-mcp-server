@@ -245,6 +245,42 @@ describe("setupToolHandlers", () => {
     expect(services.customMail.testImapConnection).toHaveBeenCalledWith("work");
   });
 
+  it("setup_custom_mail_smtp configures the default account when no account param", async () => {
+    const config = makeConfig();
+    const services = {
+      db: {
+        audit: vi.fn(async () => undefined),
+        setRuntimeConfig: vi.fn(async () => undefined)
+      },
+      customMail: {
+        addOrUpdateAccount: vi.fn(),
+        testSmtpConnection: vi.fn(async () => undefined),
+        exportAccounts: vi.fn(() => [{ label: "default", smtp: {} }])
+      }
+    } as unknown as Services;
+
+    const result = await setupToolHandlers(config, services).setupCustomMailSmtp({
+      host: "smtp.example.com",
+      user: "me@example.com",
+      password: "secret",
+      defaultFrom: "me@example.com"
+    });
+
+    expect(textPayload(result)).toMatchObject({ ok: true, account: "default" });
+    expect(services.customMail.addOrUpdateAccount).toHaveBeenCalledWith({
+      label: "default",
+      smtp: {
+        host: "smtp.example.com",
+        port: 587,
+        secure: false,
+        user: "me@example.com",
+        password: "secret"
+      },
+      defaultFrom: "me@example.com"
+    });
+    expect(services.customMail.testSmtpConnection).toHaveBeenCalledWith("default");
+  });
+
   it("setup_mail_account_list returns all accounts", async () => {
     const config = makeConfig();
     const services = {

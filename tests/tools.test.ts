@@ -37,12 +37,12 @@ describe("toolHandlers", () => {
   it("confirms and sends a prepared email", async () => {
     const services = {
       db: {
-        consumeConfirmation: vi.fn(async () => ({
-          provider: "smtp",
-          to: ["person@example.com"],
-          subject: "Hello",
-          text: "Body"
+        claimConfirmation: vi.fn(async () => ({
+          draft: { provider: "smtp", to: ["person@example.com"], subject: "Hello", text: "Body" },
+          claimToken: "sending:test"
         })),
+        completeConfirmation: vi.fn(async () => undefined),
+        releaseConfirmation: vi.fn(async () => undefined),
         audit: vi.fn(async () => undefined)
       },
       emailSender: {
@@ -57,5 +57,37 @@ describe("toolHandlers", () => {
 
     expect(textPayload(result).sent).toBe(true);
     expect(services.emailSender.send).toHaveBeenCalledOnce();
+    expect(services.db.completeConfirmation).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000000",
+      "sending:test"
+    );
+  });
+
+  it("releases a confirmation after a known send failure", async () => {
+    const services = {
+      db: {
+        claimConfirmation: vi.fn(async () => ({
+          draft: { provider: "smtp", to: ["person@example.com"], subject: "Hello", text: "Body" },
+          claimToken: "sending:test"
+        })),
+        completeConfirmation: vi.fn(async () => undefined),
+        releaseConfirmation: vi.fn(async () => undefined),
+        audit: vi.fn(async () => undefined)
+      },
+      emailSender: {
+        send: vi.fn(async () => { throw new Error("SMTP connection timed out"); })
+      }
+    } as unknown as Services;
+
+    const result = await toolHandlers(services).emailConfirmSend({
+      confirmationId: "00000000-0000-4000-8000-000000000000"
+    });
+
+    expect(textPayload(result).error.message).toBe("SMTP connection timed out");
+    expect(services.db.releaseConfirmation).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000000",
+      "sending:test"
+    );
+    expect(services.db.completeConfirmation).not.toHaveBeenCalled();
   });
 });
