@@ -4,6 +4,7 @@ import nodemailer from "nodemailer";
 import type SMTPTransport from "nodemailer/lib/smtp-transport/index.js";
 import type { AppConfig } from "../config.js";
 import { ConfigError, NotFoundError } from "../errors.js";
+import { logDebug } from "../logger.js";
 import type {
   EmailDraft,
   MailAccount,
@@ -95,6 +96,7 @@ export class CustomMailService {
       await client.mailboxOpen(account.imap!.mailbox);
       const uids = await client.search(buildImapQuery(input), { uid: true });
       if (!uids) {
+        logDebug("IMAP search completed", { account: account.label, results: 0 });
         return [];
       }
       const limited = uids.slice(-input.limit).reverse();
@@ -109,7 +111,7 @@ export class CustomMailService {
         },
         { uid: true }
       );
-      return messages.map((message) => ({
+      const summaries = messages.map((message) => ({
         id: String(message.uid),
         uid: message.uid,
         subject: message.envelope?.subject,
@@ -119,6 +121,8 @@ export class CustomMailService {
         labels: message.labels ? [...message.labels] : undefined,
         unread: message.flags ? !message.flags.has("\\Seen") : undefined
       }));
+      logDebug("IMAP search completed", { account: account.label, results: summaries.length });
+      return summaries;
     });
   }
 
@@ -181,6 +185,11 @@ export class CustomMailService {
         html: draft.html
       });
 
+      logDebug("SMTP message sent", {
+        account: account.label,
+        messageId: result.messageId,
+        response: result.response
+      });
       return {
         messageId: result.messageId,
         response: result.response
@@ -224,6 +233,7 @@ export class CustomMailService {
       logger: false
     });
 
+    logDebug("IMAP connecting", { account: account.label, host: imap.host, user: imap.user });
     await client.connect();
     try {
       return await fn(client);

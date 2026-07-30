@@ -1,11 +1,26 @@
 import { assertHttpConfig, loadConfig, setConfigValue } from "./config.js";
-import { log, logError } from "./logger.js";
+import { log, logError, setLogLevel } from "./logger.js";
 import { createServices } from "./runtime.js";
 import { startHttpServer } from "./transports/http.js";
 import { startStdioServer } from "./transports/stdio.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  setLogLevel(config.LOG_LEVEL);
+
+  log("info", "Starting personal-mcp-server", {
+    transport: config.MCP_TRANSPORT,
+    host: config.MCP_HOST,
+    port: config.MCP_PORT,
+    logLevel: config.LOG_LEVEL,
+    databaseUrl: config.TURSO_DATABASE_URL,
+    emailConfirmationTtlSeconds: config.EMAIL_CONFIRMATION_TTL_SECONDS,
+    setupToolsEnabled: config.MCP_ENABLE_SETUP_TOOLS,
+    gmailConfigured: Boolean(config.GOOGLE_REFRESH_TOKEN),
+    slackConfigured: Boolean(config.SLACK_WEBHOOK_URL),
+    authRequired: Boolean(config.MCP_BEARER_TOKEN)
+  });
+
   if (config.MCP_TRANSPORT === "streamable-http") {
     assertHttpConfig(config);
   }

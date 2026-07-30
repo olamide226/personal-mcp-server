@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createClient, type Client } from "@libsql/client";
 import type { AppConfig } from "../config.js";
 import { NotFoundError } from "../errors.js";
+import { logDebug, logInfo } from "../logger.js";
 import type { AuditEvent, EmailDraft, JsonRecord, PreparedEmail, SoulDoc } from "../types.js";
 
 export class DatabaseService {
@@ -60,6 +61,7 @@ export class DatabaseService {
       ],
       "write"
     );
+    logDebug("Database schema initialized");
   }
 
   /** Close the existing client and create a new one with updated config. Re-runs DDL. */
@@ -81,6 +83,7 @@ export class DatabaseService {
       syncInterval: this.config.TURSO_SYNC_INTERVAL_MS
     });
     await this.init();
+    logInfo("Database reconnected", { url: normalizeDbUrl(effectiveUrl) });
   }
 
   /** Lightweight connection check. Throws if the database is unreachable. */
@@ -211,10 +214,28 @@ export class DatabaseService {
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + this.confirmationTtlSeconds * 1000).toISOString();
 
+    // Opportunistically purge stale rows so expired confirmations don't pile up.
+    await this.client
+      .execute({
+        sql: "DELETE FROM send_confirmations WHERE expires_at < ?",
+        args: [new Date().toISOString()]
+      })
+      .catch(() => undefined);
+
     await this.client.execute({
       sql: `INSERT INTO send_confirmations (id, provider, draft_json, expires_at)
             VALUES (?, ?, ?, ?)`,
       args: [id, draft.provider, JSON.stringify(draft), expiresAt]
+    });
+
+    logInfo("Email staged for confirmation", {
+      confirmationId: id,
+      provider: draft.provider,
+      account: draft.account,
+      to: draft.to,
+      subject: draft.subject,
+      expiresAt,
+      ttlSeconds: this.confirmationTtlSeconds
     });
 
     return {
@@ -239,7 +260,9 @@ export class DatabaseService {
 
     const row = result.rows[0] as Record<string, unknown> | undefined;
     if (!row) {
-      throw new NotFoundError("Confirmation token not found.");
+      throw new NotFoundError(
+        "Confirmation token not found. Stage a new email with email_prepare_send."
+      );
     }
     if (row.used_at) {
       const usedAt = String(row.used_at);
@@ -249,7 +272,9 @@ export class DatabaseService {
       throw new NotFoundError("Confirmation token has already been used.");
     }
     if (String(row.expires_at) < now) {
-      throw new NotFoundError("Confirmation token has expired.");
+      throw new NotFoundError(
+        `Confirmation token expired at ${String(row.expires_at)}. Stage a new email with email_prepare_send.`
+      );
     }
 
     const claimToken = `sending:${randomUUID()}`;
@@ -261,6 +286,7 @@ export class DatabaseService {
       throw new NotFoundError("Confirmation token is already being sent or has been used.");
     }
 
+    logDebug("Confirmation claimed for sending", { confirmationId: id });
     return { draft: JSON.parse(String(row.draft_json)) as EmailDraft, claimToken };
   }
 
@@ -270,6 +296,7 @@ export class DatabaseService {
       sql: "UPDATE send_confirmations SET used_at = ? WHERE id = ? AND used_at = ?",
       args: [new Date().toISOString(), id, claimToken]
     });
+    logDebug("Confirmation marked as sent", { confirmationId: id });
   }
 
   /** Make a confirmation available again after a known send failure. */
@@ -278,6 +305,7 @@ export class DatabaseService {
       sql: "UPDATE send_confirmations SET used_at = NULL WHERE id = ? AND used_at = ?",
       args: [id, claimToken]
     });
+    logDebug("Confirmation released back to pending after send failure", { confirmationId: id });
   }
 
   async audit(event: AuditEvent): Promise<void> {

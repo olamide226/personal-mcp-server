@@ -5,7 +5,7 @@ import type { AppConfig } from "../config.js";
 import type { Services } from "../runtime.js";
 import { createMcpServer } from "../server.js";
 import { errorMessage } from "../errors.js";
-import { log, logError } from "../logger.js";
+import { log, logDebug, logError, logWarn } from "../logger.js";
 
 export async function startHttpServer(config: AppConfig, services: Services): Promise<http.Server> {
   const server = http.createServer(async (req, res) => {
@@ -42,6 +42,7 @@ async function routeRequest(
   res: ServerResponse
 ): Promise<void> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  logDebug("HTTP request", { method: req.method, path: url.pathname });
 
   if (req.method === "GET" && url.pathname === "/healthz") {
     sendJson(res, 200, {
@@ -78,10 +79,16 @@ async function routeRequest(
   }
 
   if (!isAuthorized(config, req)) {
+    logWarn("Rejected unauthorized MCP request", { method: req.method, path: url.pathname });
     sendJson(res, 401, { error: "Unauthorized" });
     return;
   }
   if (!isAllowedOrigin(config, req)) {
+    logWarn("Rejected MCP request from forbidden origin", {
+      method: req.method,
+      path: url.pathname,
+      origin: req.headers.origin
+    });
     sendJson(res, 403, { error: "Forbidden origin" });
     return;
   }
