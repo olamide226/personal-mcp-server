@@ -1,5 +1,6 @@
 import { OAuth2Client } from "google-auth-library";
 import type { AppConfig } from "../config.js";
+import { logDebug } from "../logger.js";
 
 // ── Auth ──
 
@@ -71,14 +72,18 @@ async function gmailRequest<T>(
   const headers: Record<string, string> = await auth.getRequestHeaders();
   headers["Content-Type"] = "application/json";
 
+  const method = opts.method ?? "GET";
+  logDebug("Gmail API request", { method, path });
+
   const response = await fetch(url.toString(), {
-    method: opts.method ?? "GET",
+    method,
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
 
   if (!response.ok) {
     const text = await response.text();
+    logDebug("Gmail API request failed", { method, path, status: response.status });
     throw new Error(`Gmail API ${response.status}: ${text}`);
   }
 

@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { ConfigError, NotFoundError } from "../errors.js";
+import { logDebug } from "../logger.js";
 import type { EmailDraft, MailMessage, MailSearchInput, MailSummary } from "../types.js";
 import { base64UrlEncode, buildMimeMessage, decodeBase64Url } from "../utils/email.js";
 import {
@@ -64,6 +65,7 @@ export class GmailService {
     this.assertRefreshToken();
     const auth = this.getOAuthClient();
     const q = buildGmailQuery(input);
+    logDebug("Gmail search", { query: q, limit: input.limit });
     const response = await listMessages(auth, {
       q,
       maxResults: input.limit
@@ -82,11 +84,13 @@ export class GmailService {
       })
     );
 
+    logDebug("Gmail search completed", { query: q, results: summaries.length });
     return summaries;
   }
 
   async getMessage(id: string): Promise<MailMessage> {
     this.assertRefreshToken();
+    logDebug("Gmail get message", { id });
     const response = await getMessage(this.getOAuthClient(), id, "full");
     if (!response.id) {
       throw new NotFoundError("Gmail message not found.");
@@ -98,6 +102,7 @@ export class GmailService {
     this.assertRefreshToken();
     const raw = base64UrlEncode(buildMimeMessage(draft, this.config.EMAIL_DEFAULT_FROM));
     const response = await sendMessage(this.getOAuthClient(), raw);
+    logDebug("Gmail message sent", { id: response.id, threadId: response.threadId });
     return {
       id: response.id ?? undefined,
       threadId: response.threadId ?? undefined

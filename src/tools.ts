@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Services } from "./runtime.js";
 import { errorMessage } from "./errors.js";
+import { logError, logInfo } from "./logger.js";
 import { assertValidDraft } from "./utils/email.js";
 import { jsonText } from "./utils/mcp.js";
 import type { EmailDraft, JsonRecord } from "./types.js";
@@ -141,25 +142,32 @@ export function audited<TArgs>(
   fn: (args: TArgs) => Promise<ReturnType<typeof jsonText>>
 ) {
   return async (args: TArgs) => {
+    const startedAt = Date.now();
+    const metadata = summarizeArgs(args);
+    logInfo("Tool called", { tool: toolName, args: metadata });
     try {
       const result = await fn(args);
+      const durationMs = Date.now() - startedAt;
       await services.db
         .audit({
           toolName,
           success: true,
-          metadata: summarizeArgs(args)
+          metadata
         })
         .catch(() => undefined);
+      logInfo("Tool succeeded", { tool: toolName, durationMs });
       return result;
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
       await services.db
         .audit({
           toolName,
           success: false,
-          metadata: summarizeArgs(args),
+          metadata,
           error: errorMessage(error)
         })
         .catch(() => undefined);
+      logError("Tool failed", error, { tool: toolName, durationMs });
       return jsonText({
         error: {
           name: error instanceof Error ? error.name : "Error",

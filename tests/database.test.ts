@@ -29,6 +29,29 @@ describe("DatabaseService", () => {
     });
   });
 
+  it("stages confirmations with a 24-hour expiry by default", async () => {
+    const config = loadConfig({ TURSO_DATABASE_URL: ":memory:" });
+    expect(config.EMAIL_CONFIRMATION_TTL_SECONDS).toBe(86400);
+
+    const db = new DatabaseService(config);
+    await db.init();
+
+    const before = Date.now();
+    const prepared = await db.createConfirmation({
+      provider: "smtp",
+      to: ["person@example.com"],
+      subject: "Hello",
+      text: "Body"
+    });
+
+    const ttlMs = new Date(prepared.expiresAt).getTime() - before;
+    expect(ttlMs).toBeGreaterThan(86300 * 1000);
+    expect(ttlMs).toBeLessThanOrEqual(86400 * 1000);
+
+    const claim = await db.claimConfirmation(prepared.id);
+    expect(claim.draft.subject).toBe("Hello");
+  });
+
   it("keeps a confirmation retryable until its send succeeds", async () => {
     const db = new DatabaseService(
       loadConfig({

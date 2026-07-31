@@ -19,6 +19,7 @@ const envSchema = z.object({
   MCP_BEARER_TOKEN: z.string().optional(),
   MCP_ALLOWED_ORIGINS: z.string().default("*"),
   MCP_ENABLE_SETUP_TOOLS: boolFromEnv.default(true),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
 
   TURSO_DATABASE_URL: z.string().default("file:local.db"),
   TURSO_AUTH_TOKEN: z.string().optional(),
@@ -47,7 +48,7 @@ const envSchema = z.object({
   CUSTOM_MAIL_ACCOUNTS: z.string().optional(),
 
   EMAIL_DEFAULT_FROM: z.string().email().optional(),
-  EMAIL_CONFIRMATION_TTL_SECONDS: z.coerce.number().int().positive().default(600),
+  EMAIL_CONFIRMATION_TTL_SECONDS: z.coerce.number().int().positive().default(86400),
 
   SLACK_WEBHOOK_URL: z.string().url().optional()
 });

@@ -74,6 +74,7 @@ Every setting can be provided via `.env` or overridden at runtime by the corresp
 | `MCP_BEARER_TOKEN` | — | Optional. When set, requires `Authorization: Bearer <token>` on all requests |
 | `MCP_ALLOWED_ORIGINS` | `*` | Comma-separated origins or `*` for all |
 | `MCP_ENABLE_SETUP_TOOLS` | `true` | Set to `false` to remove `setup_*` tools |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, or `error`. Structured JSON logs go to stderr |
 
 ### Database
 
@@ -117,7 +118,7 @@ Scopes requested: `gmail.readonly`, `gmail.send`.
 | `CUSTOM_SMTP_USER` | — | Optional |
 | `CUSTOM_SMTP_PASSWORD` | — | Optional |
 | `EMAIL_DEFAULT_FROM` | — | Default sender address |
-| `EMAIL_CONFIRMATION_TTL_SECONDS` | `600` | Expiry for staged-but-unsent emails |
+| `EMAIL_CONFIRMATION_TTL_SECONDS` | `86400` | Expiry for staged-but-unsent emails (24 h default, so drafts survive across sessions) |
 
 ### Slack
 
@@ -198,6 +199,7 @@ src/
 **Key design choices:**
 - **Shared mutable config** — All services hold a reference to the same `AppConfig` object. Setup tools mutate it directly; lazy services (Gmail, IMAP, SMTP, Slack) pick up changes on the next call. Only `DatabaseService` needs an explicit `reconnect()` since it creates the libSQL client eagerly.
 - **Audit logging** — Every tool call is logged to the `audit_log` table with success/failure, args (secrets redacted), and a timestamp.
+- **Structured logging** — Every tool call (with redacted args and duration), email send, and error is also emitted as a JSON log line on stderr, so stdout stays clean for the stdio transport. Set `LOG_LEVEL=debug` for verbose service-level detail (IMAP/SMTP/Gmail requests, confirmation lifecycle).
 - **Two-step email send** — `email_prepare_send` stages a draft (stored in DB with a TTL), `email_confirm_send` consumes it. Prevents accidental sends and gives the agent a chance to review.
 - **OAuth works in both transports** — Streamable HTTP mode has dedicated callback routes; stdio mode uses the `setup_gmail_oauth_start` / `setup_gmail_oauth_complete` tools where the user copies the code manually.
 

@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { ConfigError } from "../errors.js";
+import { logInfo } from "../logger.js";
 
 export class SlackService {
   constructor(private readonly config: AppConfig) {}
@@ -24,6 +25,10 @@ export class SlackService {
       throw new Error(`Slack webhook failed with HTTP ${response.status}: ${await response.text()}`);
     }
 
+    logInfo("Slack notification sent", {
+      textLength: input.text.length,
+      hasBlocks: Boolean(input.blocks?.length)
+    });
     return { ok: true };
   }
 
