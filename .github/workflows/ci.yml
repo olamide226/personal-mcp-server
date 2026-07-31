@@ -54,12 +54,21 @@ jobs:
   docker:
     name: Build & Push Docker
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [lint, test, build]
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      # Install current QEMU for the arm64 leg — the runner's preinstalled
+      # binfmt QEMU intermittently kills Node with "uncaught target signal 4
+      # (Illegal instruction)" during `npm ci` under emulation.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

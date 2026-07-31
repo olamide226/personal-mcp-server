@@ -43,10 +43,12 @@ describe("DatabaseService", () => {
       subject: "Hello",
       text: "Body"
     });
+    const after = Date.now();
 
-    const ttlMs = new Date(prepared.expiresAt).getTime() - before;
-    expect(ttlMs).toBeGreaterThan(86300 * 1000);
-    expect(ttlMs).toBeLessThanOrEqual(86400 * 1000);
+    // expiresAt = creation time + 24h, and creation happened within [before, after].
+    const expiresMs = new Date(prepared.expiresAt).getTime();
+    expect(expiresMs - before).toBeGreaterThanOrEqual(86400 * 1000);
+    expect(expiresMs - after).toBeLessThanOrEqual(86400 * 1000);
 
     const claim = await db.claimConfirmation(prepared.id);
     expect(claim.draft.subject).toBe("Hello");
